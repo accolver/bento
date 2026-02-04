@@ -1,0 +1,89 @@
+{
+  "version": "1.0",
+  "enforcement": {
+    "specs": "hard",
+    "links": "hard",
+    "tests": "hard",
+    "orphans": "hard"
+  },
+  "languages": {
+    "typescript": {
+      "extensions": [
+        ".ts",
+        ".tsx"
+      ],
+      "annotationPrefix": "//",
+      "testPatterns": [
+        "**/*.test.ts",
+        "**/*.spec.ts"
+      ]
+    },
+    "javascript": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs"
+      ],
+      "annotationPrefix": "//",
+      "testPatterns": [
+        "**/*.test.js",
+        "**/*.spec.js"
+      ]
+    },
+    "python": {
+      "extensions": [
+        ".py"
+      ],
+      "annotationPrefix": "#",
+      "testPatterns": [
+        "**/test_*.py",
+        "**/*_test.py"
+      ]
+    },
+    "go": {
+      "extensions": [
+        ".go"
+      ],
+      "annotationPrefix": "//",
+      "testPatterns": [
+        "**/*_test.go"
+      ]
+    },
+    "rust": {
+      "extensions": [
+        ".rs"
+      ],
+      "annotationPrefix": "//",
+      "testPatterns": [
+        "**/tests/**/*.rs"
+      ]
+    }
+  },
+  "paths": {
+    "specs": "telos/specs",
+    "index": "telos/index.json",
+    "orphans": "telos/orphans.json",
+    "telos": "telos/TELOS.md"
+  },
+  "ignore": [
+    "node_modules",
+    "dist",
+    "build",
+    ".git",
+    ".telos",
+    "telos",
+    "coverage",
+    "__pycache__",
+    ".pytest_cache",
+    "target",
+    "vendor"
+  ],
+  "testFrameworks": {
+    "typescript": "vitest",
+    "javascript": "jest",
+    "python": "pytest",
+    "go": "go-test",
+    "rust": "cargo-test"
+  }
+}

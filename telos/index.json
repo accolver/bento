@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-02-04T16:18:15.948Z",
+  "specs": {
+    "L4:purpose": {
+      "id": "L4:purpose",
+      "level": 4,
+      "levelName": "purpose",
+      "title": "L4:purpose: bento",
+      "filePath": "telos/specs/L4-purpose/purpose.md",
+      "parent": null,
+      "children": [],
+      "modulePath": null,
+      "testPath": null,
+      "scenarioCount": 0,
+      "functionCount": 0
+    }
+  },
+  "byLevel": {
+    "1": [],
+    "2": [],
+    "3": [],
+    "4": [
+      "L4:purpose"
+    ]
+  },
+  "byPath": {},
+  "errors": []
+}

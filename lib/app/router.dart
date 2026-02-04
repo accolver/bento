@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../features/terminal/presentation/screens/terminal_screen.dart';
+
 part 'router.g.dart';
 
 /// Route paths for the application.
@@ -48,7 +50,7 @@ GoRouter router(RouterRef ref) {
         name: 'terminal',
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
-          return _PlaceholderScreen(title: 'Terminal: $id');
+          return TerminalScreen(title: 'Terminal: $id');
         },
       ),
     ],
@@ -73,16 +75,22 @@ class _PlaceholderScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.construction,
+              Icons.terminal,
               size: 64,
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.headlineMedium),
+            Text('Bento', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(
-              'Coming soon...',
+              'Mobile Terminal',
               style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: () => context.go(Routes.terminalPath('demo')),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Open Terminal'),
             ),
           ],
         ),

@@ -178,7 +178,6 @@ Use this context to ensure changes align with purpose.
 **Remember**: Code without specs is orphaned code. Specs without tests are
 incomplete. Every line should trace back to purpose.
 
-
 ## Automatic Behavior
 
 As an AI assistant, you should **automatically**:
@@ -228,3 +227,169 @@ traceable back to the ultimate goal. SDD ensures this traceability is enforced:
 
 For more information, see
 [Telos Framework documentation](https://github.com/telos-framework/init).
+
+---
+
+# OPENSPEC WORKFLOW
+
+This project uses **OpenSpec** for managing feature changes through a structured
+artifact workflow.
+
+## OpenSpec Commands
+
+| Command          | Purpose                                    |
+| ---------------- | ------------------------------------------ |
+| `/opsx-new`      | Start a new change with proposal           |
+| `/opsx-continue` | Create next artifact for a change          |
+| `/opsx-ff`       | Fast-forward: create all artifacts at once |
+| `/opsx-apply`    | Implement tasks from a change              |
+| `/opsx-verify`   | Verify implementation matches specs        |
+| `/opsx-archive`  | Archive completed change                   |
+
+## Change Priority
+
+When using `/opsx-apply` without specifying a change name:
+
+1. **Auto-select highest priority change** based on:
+   - Dependencies satisfied (prerequisite changes completed)
+   - PRD phase order (Phase 1 MVP before Phase 2)
+   - P0 (Must Have) before P1 (Should Have) before P2 (Nice to Have)
+
+2. **Current priority order for Bento**:
+   - `scaffold-flutter-project` (foundation) ✓ DONE
+   - `terminal-emulation` (core terminal) ✓ DONE
+   - `ssh-connectivity` (connect to servers)
+   - `credential-storage` (save credentials securely)
+   - `host-management` (manage saved connections)
+   - `semantic-blocks` (smart command/output blocks)
+   - `session-tabs` (multiple terminal sessions)
+
+3. **If ambiguous**, prompt user to select from available changes
+
+---
+
+# TEST-DRIVEN DEVELOPMENT (TDD) - ENFORCED
+
+**TDD is MANDATORY for all code changes in this project.**
+
+## TDD Workflow
+
+```
+1. SPEC    → Write/update spec with scenarios (GIVEN/WHEN/THEN)
+2. TEST    → Write failing tests from scenarios
+3. RED     → Run tests, verify they fail
+4. CODE    → Write minimal code to pass tests
+5. GREEN   → Run tests, verify they pass
+6. REFACTOR→ Clean up while keeping tests green
+```
+
+## TDD Rules
+
+### BEFORE Writing Any Implementation Code
+
+1. **Spec scenarios MUST exist** for the functionality
+2. **Tests MUST be written** from those scenarios
+3. **Tests MUST fail** before implementation (proves test is valid)
+
+### DURING Implementation
+
+1. Write **minimal code** to make tests pass
+2. Do NOT write code without a corresponding test
+3. Run tests frequently (`flutter test`)
+
+### AFTER Implementation
+
+1. All tests MUST pass
+2. Run `flutter analyze` - no errors allowed
+3. Coverage should include all spec scenarios
+
+## Test File Organization
+
+```
+test/
+├── unit/                    # Pure logic tests
+├── widget/                  # Widget tests
+├── features/
+│   └── <feature>/
+│       ├── domain/
+│       │   ├── entities/    # Entity tests
+│       │   └── usecases/    # Use case tests
+│       ├── data/            # Repository tests
+│       └── presentation/    # Provider/widget tests
+└── integration_test/        # E2E tests
+```
+
+## Test Annotations
+
+Every test file MUST have `@telos-test` linking to the spec:
+
+```dart
+// @telos-test L1:function:lib/features/terminal/domain/entities:terminal_config
+void main() {
+  group('TerminalConfig', () {
+    // @telos-scenario L1:...:terminal_config:default-values
+    test('has sensible default values', () {
+      // test implementation
+    });
+  });
+}
+```
+
+## When Working on OpenSpec Changes
+
+When `/opsx-apply` is invoked:
+
+1. Read the change's `specs/**/*.md` files
+2. For each requirement with scenarios:
+   - Check if test exists
+   - If not, **write the test first**
+   - Then implement the code
+3. Mark task complete only after tests pass
+
+## Flutter-Specific Testing
+
+```bash
+# Run all tests
+flutter test
+
+# Run specific test file
+flutter test test/features/terminal/domain/entities/terminal_config_test.dart
+
+# Run with coverage
+flutter test --coverage
+
+# Run only unit tests
+flutter test test/unit/
+```
+
+## Mocking Guidelines
+
+- Use `mocktail` for mocking (already in dev dependencies)
+- Mock external dependencies (network, database, platform)
+- Don't mock the code under test
+
+---
+
+# QUICK REFERENCE
+
+## Before ANY Code Change
+
+- [ ] Spec exists with scenarios?
+- [ ] Tests written from scenarios?
+- [ ] Tests fail before implementation?
+
+## After ANY Code Change
+
+- [ ] All tests pass?
+- [ ] `flutter analyze` clean?
+- [ ] `@telos` annotations present?
+
+## Starting Work Session
+
+```bash
+# Check what needs to be done
+openspec list --json
+
+# Continue highest priority change
+/opsx-apply
+```

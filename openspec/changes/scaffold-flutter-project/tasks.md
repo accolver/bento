@@ -19,13 +19,13 @@ tasks must be completed before any feature changes can be implemented.
 
 #### T1.1: Create pubspec.yaml
 
-- [ ] Create `pubspec.yaml` with project metadata
-- [ ] Add Flutter SDK constraints (>=3.19.0)
-- [ ] Add Dart SDK constraints (>=3.3.0 <4.0.0)
-- [ ] Add all runtime dependencies from PRD section 2.2
-- [ ] Add all dev dependencies for code generation
-- [ ] Configure asset directories
-- [ ] Configure font directories
+- [x] Create `pubspec.yaml` with project metadata
+- [x] Add Flutter SDK constraints (>=3.19.0)
+- [x] Add Dart SDK constraints (>=3.3.0 <4.0.0)
+- [x] Add all runtime dependencies from PRD section 2.2
+- [x] Add all dev dependencies for code generation
+- [x] Configure asset directories
+- [x] Configure font directories
 
 **Dependencies from PRD:**
 
@@ -44,7 +44,7 @@ sqlite3_flutter_libs: ^0.5.0
 dio: ^5.4.0
 connectivity_plus: ^5.0.0
 # SSH
-dartssh2: ^4.0.0
+dartssh2: ^2.13.0
 # Functional
 fpdart: ^1.1.0
 # Serialization
@@ -63,16 +63,15 @@ json_serializable: ^6.7.0
 riverpod_generator: ^2.3.0
 drift_dev: ^2.14.0
 flutter_lints: ^3.0.0
-mockito: ^5.4.0
-build_runner: ^2.4.0
+mocktail: ^1.0.0
 ```
 
 #### T1.2: Create analysis_options.yaml
 
-- [ ] Extend flutter_lints/flutter.yaml
-- [ ] Configure strict mode settings
-- [ ] Add project-specific lint rules
-- [ ] Configure exclude paths for generated files
+- [x] Extend flutter_lints/flutter.yaml
+- [x] Configure strict mode settings
+- [x] Add project-specific lint rules
+- [x] Configure exclude paths for generated files
 
 #### T1.3: Create build.yaml (optional)
 
@@ -85,30 +84,30 @@ build_runner: ^2.4.0
 
 #### T2.1: Create lib/ structure
 
-- [ ] Create `lib/app/` directory
-- [ ] Create `lib/core/constants/` directory
-- [ ] Create `lib/core/errors/` directory
-- [ ] Create `lib/core/extensions/` directory
-- [ ] Create `lib/core/utils/` directory
-- [ ] Create `lib/core/di/` directory
-- [ ] Create `lib/features/` directory (empty placeholder)
-- [ ] Create `lib/shared/widgets/` directory
-- [ ] Create `lib/shared/services/` directory
-- [ ] Create `lib/database/tables/` directory
-- [ ] Create `lib/database/daos/` directory
+- [x] Create `lib/app/` directory
+- [x] Create `lib/core/constants/` directory
+- [x] Create `lib/core/errors/` directory
+- [x] Create `lib/core/extensions/` directory
+- [x] Create `lib/core/utils/` directory
+- [x] Create `lib/core/di/` directory
+- [x] Create `lib/features/` directory (empty placeholder)
+- [x] Create `lib/shared/widgets/` directory
+- [x] Create `lib/shared/services/` directory
+- [x] Create `lib/database/tables/` directory
+- [x] Create `lib/database/daos/` directory
 
 #### T2.2: Create test/ structure
 
-- [ ] Create `test/unit/` directory
-- [ ] Create `test/widget/` directory
-- [ ] Create `integration_test/` directory
+- [x] Create `test/unit/` directory
+- [x] Create `test/widget/` directory
+- [x] Create `integration_test/` directory
 
 #### T2.3: Create assets/ structure
 
-- [ ] Create `assets/icons/` directory
-- [ ] Create `assets/fonts/` directory
-- [ ] Create `assets/models/` directory
-- [ ] Add `.gitkeep` to empty directories
+- [x] Create `assets/icons/` directory
+- [x] Create `assets/fonts/` directory
+- [x] Create `assets/models/` directory
+- [x] Add `.gitkeep` to empty directories
 
 ---
 
@@ -116,32 +115,32 @@ build_runner: ^2.4.0
 
 #### T3.1: Create main.dart
 
-- [ ] Implement `main()` function
-- [ ] Initialize Flutter bindings
-- [ ] Initialize database
-- [ ] Set up ProviderScope
-- [ ] Run BentoApp widget
+- [x] Implement `main()` function
+- [x] Initialize Flutter bindings
+- [x] Initialize database
+- [x] Set up ProviderScope
+- [x] Run BentoApp widget
 
 #### T3.2: Create app/app.dart
 
-- [ ] Create BentoApp ConsumerWidget
-- [ ] Configure MaterialApp.router
-- [ ] Set up theme
-- [ ] Configure router
+- [x] Create BentoApp ConsumerWidget
+- [x] Configure MaterialApp.router
+- [x] Set up theme
+- [x] Configure router
 
 #### T3.3: Create app/router.dart
 
-- [ ] Define GoRouter configuration
-- [ ] Set up initial route (placeholder home)
-- [ ] Configure error handling
-- [ ] Export router provider
+- [x] Define GoRouter configuration
+- [x] Set up initial route (placeholder home)
+- [x] Configure error handling
+- [x] Export router provider
 
 #### T3.4: Create app/theme.dart
 
-- [ ] Define light theme
-- [ ] Define dark theme
-- [ ] Configure typography
-- [ ] Configure color scheme (terminal-friendly)
+- [x] Define light theme
+- [x] Define dark theme
+- [x] Configure typography
+- [x] Configure color scheme (terminal-friendly)
 
 ---
 
@@ -149,39 +148,39 @@ build_runner: ^2.4.0
 
 #### T4.1: Create core/errors/failures.dart
 
-- [ ] Define abstract Failure class
-- [ ] Implement ServerFailure
-- [ ] Implement NetworkFailure
-- [ ] Implement CacheFailure
-- [ ] Implement ValidationFailure
-- [ ] Implement UnknownFailure
+- [x] Define abstract Failure class
+- [x] Implement ServerFailure
+- [x] Implement NetworkFailure
+- [x] Implement CacheFailure
+- [x] Implement ValidationFailure
+- [x] Implement UnknownFailure
 
 #### T4.2: Create core/errors/exceptions.dart
 
-- [ ] Define ServerException
-- [ ] Define NetworkException
-- [ ] Define CacheException
-- [ ] Define ValidationException
+- [x] Define ServerException
+- [x] Define NetworkException
+- [x] Define CacheException
+- [x] Define ValidationException
 
 #### T4.3: Create core/di/providers.dart
 
-- [ ] Create database provider
-- [ ] Create dio client provider
-- [ ] Create connectivity provider
-- [ ] Export all global providers
+- [x] Create database provider
+- [x] Create dio client provider
+- [x] Create connectivity provider
+- [x] Export all global providers
 
 #### T4.4: Create core/constants/app_constants.dart
 
-- [ ] Define app name
-- [ ] Define version
-- [ ] Define default timeout values
-- [ ] Define cache duration constants
+- [x] Define app name
+- [x] Define version
+- [x] Define default timeout values
+- [x] Define cache duration constants
 
 #### T4.5: Create core/extensions/context_extensions.dart
 
-- [ ] Add theme extension on BuildContext
-- [ ] Add navigator extension on BuildContext
-- [ ] Add media query extensions
+- [x] Add theme extension on BuildContext
+- [x] Add navigator extension on BuildContext
+- [x] Add media query extensions
 
 ---
 
@@ -189,21 +188,21 @@ build_runner: ^2.4.0
 
 #### T5.1: Create database/database.dart
 
-- [ ] Define BentoDatabase class extending GeneratedDatabase
-- [ ] Configure database path
-- [ ] Set schema version to 1
-- [ ] Add migration strategy placeholder
-- [ ] Export database instance
+- [x] Define BentoDatabase class extending GeneratedDatabase
+- [x] Configure database path
+- [x] Set schema version to 1
+- [x] Add migration strategy placeholder
+- [x] Export database instance
 
 #### T5.2: Create database tables placeholder
 
-- [ ] Create `database/tables/.gitkeep`
-- [ ] Add comment documenting where feature tables go
+- [x] Create `database/tables/.gitkeep`
+- [x] Add comment documenting where feature tables go
 
 #### T5.3: Create database DAOs placeholder
 
-- [ ] Create `database/daos/.gitkeep`
-- [ ] Add comment documenting where feature DAOs go
+- [x] Create `database/daos/.gitkeep`
+- [x] Add comment documenting where feature DAOs go
 
 ---
 
@@ -211,11 +210,11 @@ build_runner: ^2.4.0
 
 #### T6.1: Create shared/widgets/.gitkeep
 
-- [ ] Add placeholder for shared widgets
+- [x] Add placeholder for shared widgets
 
 #### T6.2: Create shared/services/.gitkeep
 
-- [ ] Add placeholder for shared services
+- [x] Add placeholder for shared services
 
 ---
 
@@ -223,12 +222,12 @@ build_runner: ^2.4.0
 
 #### T7.1: Create .github/workflows/ci.yml
 
-- [ ] Configure trigger on push/PR to main
-- [ ] Set up Flutter environment
-- [ ] Run `flutter pub get`
-- [ ] Run `flutter analyze`
-- [ ] Run `flutter test`
-- [ ] Cache pub dependencies
+- [x] Configure trigger on push/PR to main
+- [x] Set up Flutter environment
+- [x] Run `flutter pub get`
+- [x] Run `flutter analyze`
+- [x] Run `flutter test`
+- [x] Cache pub dependencies
 
 #### T7.2: Create .github/dependabot.yml (optional)
 
@@ -259,12 +258,12 @@ build_runner: ^2.4.0
 
 After all tasks complete:
 
-- [ ] `flutter pub get` succeeds
-- [ ] `flutter analyze` passes with no errors
-- [ ] `flutter test` runs (even if no tests yet)
-- [ ] `dart run build_runner build` succeeds
-- [ ] Project structure matches design.md
-- [ ] All imports resolve correctly
+- [x] `flutter pub get` succeeds
+- [x] `flutter analyze` passes with no errors
+- [x] `flutter test` runs (even if no tests yet)
+- [x] `dart run build_runner build` succeeds
+- [x] Project structure matches design.md
+- [x] All imports resolve correctly
 
 ---
 

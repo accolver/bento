@@ -1,0 +1,135 @@
+// @telos L1:function:lib/app:router
+
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'router.g.dart';
+
+/// Route paths for the application.
+abstract class Routes {
+  Routes._();
+
+  static const String home = '/';
+  static const String connections = '/connections';
+  static const String settings = '/settings';
+  static const String terminal = '/terminal/:id';
+
+  /// Generate terminal route with connection ID.
+  static String terminalPath(String connectionId) => '/terminal/$connectionId';
+}
+
+/// Provides the application router configuration.
+@riverpod
+GoRouter router(RouterRef ref) {
+  return GoRouter(
+    initialLocation: Routes.home,
+    debugLogDiagnostics: true,
+    routes: [
+      GoRoute(
+        path: Routes.home,
+        name: 'home',
+        builder: (context, state) => const _PlaceholderScreen(title: 'Home'),
+      ),
+      GoRoute(
+        path: Routes.connections,
+        name: 'connections',
+        builder: (context, state) =>
+            const _PlaceholderScreen(title: 'Connections'),
+      ),
+      GoRoute(
+        path: Routes.settings,
+        name: 'settings',
+        builder: (context, state) =>
+            const _PlaceholderScreen(title: 'Settings'),
+      ),
+      GoRoute(
+        path: Routes.terminal,
+        name: 'terminal',
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return _PlaceholderScreen(title: 'Terminal: $id');
+        },
+      ),
+    ],
+    errorBuilder: (context, state) => _ErrorScreen(error: state.error),
+  );
+}
+
+/// Placeholder screen used during initial scaffold.
+///
+/// Will be replaced by actual feature screens.
+class _PlaceholderScreen extends StatelessWidget {
+  const _PlaceholderScreen({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.construction,
+              size: 64,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(title, style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 8),
+            Text(
+              'Coming soon...',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Error screen shown when navigation fails.
+class _ErrorScreen extends StatelessWidget {
+  const _ErrorScreen({this.error});
+
+  final Exception? error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Error')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Page not found',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 8),
+            if (error != null)
+              Text(
+                error.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => context.go(Routes.home),
+              child: const Text('Go Home'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

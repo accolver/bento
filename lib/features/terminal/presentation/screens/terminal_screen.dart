@@ -221,9 +221,9 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     final colors = TerminalColors.forBrightness(brightness);
     final config = ref.watch(terminalConfigProvider);
 
-    // Calculate fixed height for ~4 lines of terminal
+    // Calculate fixed height for ~6 lines of terminal
     // charHeight includes line spacing, typically fontSize * 1.2
-    final terminalInputHeight = config.charHeight * 4 + 8; // 4 lines + padding
+    final terminalInputHeight = config.charHeight * 6 + 8; // 6 lines + padding
 
     return Column(
       children: [
@@ -233,21 +233,24 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
             onRerunCommand: _handleRerunCommand,
           ),
         ),
-        // Terminal input area - fixed height for 4 lines
-        Container(
-          height: terminalInputHeight,
-          decoration: BoxDecoration(
-            color: colors.background,
-            border: Border(
-              top: BorderSide(
-                color: colors.foreground.withValues(alpha: 0.3),
-                width: 1,
+        // Terminal input area - fixed height for 6 lines
+        // ClipRect ensures terminal content doesn't overflow above the border
+        ClipRect(
+          child: Container(
+            height: terminalInputHeight,
+            decoration: BoxDecoration(
+              color: colors.background,
+              border: Border(
+                top: BorderSide(
+                  color: colors.foreground.withValues(alpha: 0.3),
+                  width: 1,
+                ),
               ),
             ),
-          ),
-          child: BentoTerminalView(
-            onResize: _handleResize,
-            autofocus: true,
+            child: BentoTerminalView(
+              onResize: _handleResize,
+              autofocus: true,
+            ),
           ),
         ),
       ],

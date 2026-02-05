@@ -219,41 +219,35 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   Widget _buildSemanticBlocksView() {
     final brightness = Theme.of(context).brightness;
     final colors = TerminalColors.forBrightness(brightness);
+    final config = ref.watch(terminalConfigProvider);
+
+    // Calculate fixed height for ~4 lines of terminal
+    // charHeight includes line spacing, typically fontSize * 1.2
+    final terminalInputHeight = config.charHeight * 4 + 8; // 4 lines + padding
 
     return Column(
       children: [
-        // Block list takes most of the space
+        // Block list takes remaining space
         Expanded(
-          flex: 2,
           child: BlockListView(
             onRerunCommand: _handleRerunCommand,
           ),
         ),
-        // Visual separator between blocks and terminal
+        // Terminal input area - fixed height for 4 lines
         Container(
-          height: 1,
-          color: colors.foreground.withValues(alpha: 0.3),
-        ),
-        // Terminal input area - larger for better usability
-        Expanded(
-          flex: 1,
-          child: Container(
-            decoration: BoxDecoration(
-              color: colors.background,
-              border: Border(
-                top: BorderSide(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.5),
-                  width: 2,
-                ),
+          height: terminalInputHeight,
+          decoration: BoxDecoration(
+            color: colors.background,
+            border: Border(
+              top: BorderSide(
+                color: colors.foreground.withValues(alpha: 0.3),
+                width: 1,
               ),
             ),
-            child: BentoTerminalView(
-              onResize: _handleResize,
-              autofocus: true,
-            ),
+          ),
+          child: BentoTerminalView(
+            onResize: _handleResize,
+            autofocus: true,
           ),
         ),
       ],

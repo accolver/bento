@@ -20,12 +20,9 @@ class OutputRouterController extends _$OutputRouterController {
 
   @override
   OutputRouter? build() {
-    print('[OutputRouterController] build() called - creating new router');
     // Get dependencies
     // Use ref.read to avoid rebuilds - we only need the notifier reference once
     final blockController = ref.read(blockListControllerProvider.notifier);
-    print(
-        '[OutputRouterController] blockController hashCode: ${blockController.hashCode}');
     final config = ref.read(terminalConfigProvider);
 
     // Create prompt detector with custom patterns if configured
@@ -48,11 +45,8 @@ class OutputRouterController extends _$OutputRouterController {
     // This ensures output is written to terminal even if TerminalScreen hasn't initialized yet
     final terminal = ref.read(terminalControllerProvider);
     _router!.onProcessedOutput = (data) {
-      print(
-          '[OutputRouterController] Writing to terminal: ${data.length} chars');
       terminal.write(data);
     };
-    print('[OutputRouterController] Terminal callback automatically set');
 
     // Clean up on dispose
     ref.onDispose(() {
@@ -66,8 +60,6 @@ class OutputRouterController extends _$OutputRouterController {
   ///
   /// Call this for each chunk of data received from SSH.
   void processOutput(String data) {
-    print(
-        '[OutputRouterController] processOutput called, router is ${_router == null ? "null" : "valid"}');
     _router?.processOutput(data);
   }
 
@@ -90,11 +82,8 @@ class OutputRouterController extends _$OutputRouterController {
   /// This callback is invoked with raw output after processing,
   /// allowing it to be written to the xterm terminal.
   void setOutputCallback(void Function(String) callback) {
-    print(
-        '[OutputRouterController] setOutputCallback called, router is ${_router == null ? "null" : "valid"}');
     if (_router != null) {
       _router!.onProcessedOutput = callback;
-      print('[OutputRouterController] Callback set on router');
     }
   }
 

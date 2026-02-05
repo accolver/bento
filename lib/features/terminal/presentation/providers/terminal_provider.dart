@@ -91,19 +91,13 @@ class TerminalController extends _$TerminalController {
     _outputSubscription = _sshDataSource!.output.listen((data) {
       // Decode UTF-8 properly - SSH sends UTF-8 encoded text
       final output = utf8.decode(data, allowMalformed: true);
-      print('[TerminalController] SSH output received: ${output.length} chars');
-      print(
-          '[TerminalController] enableSemanticBlocks: ${terminalConfig.enableSemanticBlocks}');
 
       if (terminalConfig.enableSemanticBlocks) {
         // Route through OutputRouter for block detection
         // The OutputRouter will write to the terminal via its callback
-        print('[TerminalController] Routing through OutputRouter');
         ref.read(outputRouterControllerProvider.notifier).processOutput(output);
       } else {
         // Classic mode: write directly to terminal
-        print(
-            '[TerminalController] Classic mode - writing directly to terminal');
         state.write(output);
       }
     });

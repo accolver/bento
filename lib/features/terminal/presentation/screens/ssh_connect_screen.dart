@@ -10,9 +10,10 @@ import '../../../connections/presentation/providers/saved_connections_provider.d
 import '../../../credentials/domain/entities/credential.dart';
 import '../../../credentials/presentation/providers/credential_providers.dart';
 import '../../../credentials/presentation/screens/key_list_screen.dart';
+import '../../../session/presentation/providers/session_list_controller.dart';
+import '../../../session/presentation/providers/session_terminal_controller.dart';
 import '../../domain/entities/ssh_auth_method.dart';
 import '../../domain/entities/ssh_connection_config.dart';
-import '../providers/terminal_provider.dart';
 
 /// Screen for entering SSH connection details and connecting.
 ///
@@ -143,14 +144,33 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
       authMethod: authMethod,
     );
 
-    // Connect via the terminal provider (which integrates with SSH)
-    final terminalNotifier = ref.read(terminalControllerProvider.notifier);
-    final result = await terminalNotifier.connectSSH(config);
+    // Create session name
+    final sessionName = savedConnection?.name ??
+        (_connectionNameController.text.trim().isNotEmpty
+            ? _connectionNameController.text.trim()
+            : '$username@$host');
+
+    // Create a new session
+    final sessionId =
+        ref.read(sessionListControllerProvider.notifier).createSession(
+              config: config,
+              name: sessionName,
+            );
+
+    // Connect via the session terminal manager
+    final result = await ref
+        .read(sessionTerminalManagerProvider.notifier)
+        .connectSession(sessionId, config);
 
     if (!mounted) return;
 
     result.fold(
       (failure) {
+        // Remove failed session
+        ref
+            .read(sessionListControllerProvider.notifier)
+            .closeSession(sessionId);
+
         setState(() {
           _isConnecting = false;
           _errorMessage = failure.message;
@@ -160,19 +180,15 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
         try {
           // Save connection if requested
           if (_saveConnection && savedConnection == null) {
-            final name = _connectionNameController.text.trim().isNotEmpty
-                ? _connectionNameController.text.trim()
-                : '$username@$host';
-
             await ref
                 .read(savedConnectionsControllerProvider.notifier)
                 .saveConnection(
-                  name: name,
+                  name: sessionName,
                   host: host,
                   port: port,
                   username: username,
-                  authType: 'password',
-                  password: password,
+                  authType: _useKeyAuth ? 'key' : 'password',
+                  password: _useKeyAuth ? null : password,
                 );
           }
         } catch (e) {
@@ -185,11 +201,10 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
         setState(() {
           _isConnecting = false;
         });
-        // Connection successful - navigate to terminal screen
+        // Connection successful - navigate to sessions screen
         if (mounted) {
-          // Use push to add to navigation stack (allows back navigation)
-          // The terminal ID is just for display - actual connection is in provider
-          context.push(Routes.terminalPath('${config.host}:${config.port}'));
+          // Go to sessions screen which shows the tab bar
+          context.go(Routes.sessions);
         }
       },
     );

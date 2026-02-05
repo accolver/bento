@@ -49,19 +49,14 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   void _initializeBlocks() {
-    print('[TerminalScreen] _initializeBlocks called');
     final config = ref.read(terminalConfigProvider);
-    print(
-        '[TerminalScreen] enableSemanticBlocks: ${config.enableSemanticBlocks}');
     if (config.enableSemanticBlocks) {
       // Load any existing blocks for this session
       ref.read(blockListControllerProvider.notifier).loadBlocks();
-      print('[TerminalScreen] Loaded blocks');
 
       // Force initialization of the output router if it hasn't been created yet
       // The router sets up its terminal callback in build(), so we just need to access it
       ref.read(outputRouterControllerProvider);
-      print('[TerminalScreen] OutputRouter initialized');
 
       // Set up callback to dismiss keyboard when command is submitted
       ref

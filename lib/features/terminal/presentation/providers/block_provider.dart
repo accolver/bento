@@ -73,7 +73,6 @@ class BlockListController extends _$BlockListController {
 
   @override
   BlockListState build() {
-    print('[BlockListController] build() called - initializing state');
     // Get repository (may be null if database not initialized)
     // Use ref.read instead of ref.watch to avoid rebuilding when repository changes
     try {
@@ -117,11 +116,6 @@ class BlockListController extends _$BlockListController {
   ///
   /// Returns the created block's ID.
   String createBlock(String command) {
-    print(
-        '[BlockListController] createBlock called with: "$command" (this.hashCode: $hashCode)');
-    print(
-        '[BlockListController] Current state has ${state.blocks.length} blocks');
-
     final id = _uuid.v4();
     final now = DateTime.now();
 
@@ -146,9 +140,6 @@ class BlockListController extends _$BlockListController {
       blocks: [...updatedBlocks, block],
       activeBlockId: id,
     );
-
-    print('[BlockListController] Block created with id: $id');
-    print('[BlockListController] New state has ${state.blocks.length} blocks');
 
     return id;
   }

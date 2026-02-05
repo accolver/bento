@@ -38,9 +38,6 @@ class _BlockListViewState extends ConsumerState<BlockListView> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(blockListControllerProvider);
-    final controller = ref.read(blockListControllerProvider.notifier);
-    print(
-        '[BlockListView] build() called, blocks: ${state.blocks.length}, controller hashCode: ${controller.hashCode}');
 
     // Auto-scroll when new blocks are added
     WidgetsBinding.instance.addPostFrameCallback((_) {

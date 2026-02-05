@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../features/home/presentation/screens/home_screen.dart';
+import '../features/session/presentation/screens/multi_session_terminal_screen.dart';
 import '../features/terminal/presentation/screens/ssh_connect_screen.dart';
 import '../features/terminal/presentation/screens/terminal_screen.dart';
 
@@ -17,6 +18,7 @@ abstract class Routes {
   static const String home = '/';
   static const String connections = '/connections';
   static const String settings = '/settings';
+  static const String sessions = '/sessions';
   static const String terminal = '/terminal/:id';
   static const String sshConnect = '/ssh-connect';
 
@@ -47,6 +49,11 @@ GoRouter router(RouterRef ref) {
         name: 'settings',
         builder: (context, state) =>
             const _PlaceholderScreen(title: 'Settings'),
+      ),
+      GoRoute(
+        path: Routes.sessions,
+        name: 'sessions',
+        builder: (context, state) => const MultiSessionTerminalScreen(),
       ),
       GoRoute(
         path: Routes.terminal,

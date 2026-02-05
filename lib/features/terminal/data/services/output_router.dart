@@ -53,10 +53,6 @@ class OutputRouter {
   /// Detects prompts, creates blocks for commands, and buffers output
   /// for efficient updates. Call this for each chunk of data received.
   void processOutput(String data) {
-    print('[OutputRouter] processOutput called with ${data.length} chars');
-    print(
-        '[OutputRouter] data: ${data.replaceAll('\n', '\\n').replaceAll('\r', '\\r')}');
-
     // Normalize line endings and split into lines for prompt detection
     // Terminals may use \r\n (CRLF), \n (LF), or just \r (CR)
     final normalizedData = data.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
@@ -68,8 +64,6 @@ class OutputRouter {
 
       // Check for prompt
       final promptResult = _promptDetector.detectPrompt(line);
-      print(
-          '[OutputRouter] Line $i: "${line.replaceAll('\r', '\\r')}" -> hasPrompt: ${promptResult.hasPrompt}, command: ${promptResult.command}');
 
       if (promptResult.hasPrompt) {
         // Complete any running block when we see a new prompt
@@ -89,20 +83,13 @@ class OutputRouter {
         if (promptResult.command != null && promptResult.command!.isNotEmpty) {
           // Only skip if this exact command just appeared (echo from typing)
           // This happens when terminal echoes back what you typed on same line
-          print(
-              '[OutputRouter] Command found in output: "${promptResult.command}", lastCommand: "$_lastCommand"');
           if (promptResult.command != _lastCommand) {
-            print(
-                '[OutputRouter] Creating block for output command: ${promptResult.command}');
             _lastCommand = promptResult.command;
             _blockController.createBlock(promptResult.command!);
             _atPrompt = false;
-          } else {
-            print('[OutputRouter] Skipping duplicate command');
           }
         } else {
           // Just a prompt without command - ready for new input
-          print('[OutputRouter] Prompt detected, ready for input');
           _atPrompt = true;
           _inputBuffer.clear(); // Clear any stale input
           _lastCommand = null;
@@ -126,8 +113,6 @@ class OutputRouter {
     }
 
     // Forward raw output to terminal (if callback set)
-    print(
-        '[OutputRouter] Forwarding to terminal callback, callback is ${onProcessedOutput == null ? "null" : "set"}');
     onProcessedOutput?.call(data);
   }
 
@@ -137,12 +122,8 @@ class OutputRouter {
   /// When Enter is pressed, creates a block for the command.
   /// Call this before sending input to SSH.
   void processInput(String data) {
-    print(
-        '[OutputRouter] processInput: ${data.length} chars, data: ${data.codeUnits}');
-
     // Detect Ctrl+C for cancellation
     if (data == '\x03') {
-      print('[OutputRouter] Ctrl+C detected');
       _inputBuffer.clear();
       if (_blockController.hasActiveBlock) {
         _blockController.completeBlock(status: BlockStatus.cancelled);
@@ -153,11 +134,9 @@ class OutputRouter {
     // Detect Enter key (creates a block)
     if (data == '\r' || data == '\n' || data == '\r\n') {
       final command = _inputBuffer.toString().trim();
-      print('[OutputRouter] Enter pressed, command buffer: "$command"');
       _inputBuffer.clear();
 
       if (command.isNotEmpty && _atPrompt) {
-        print('[OutputRouter] Creating block for input command: $command');
         _lastCommand = command;
         _blockController.createBlock(command);
         _atPrompt = false; // We're now running a command, not at prompt
@@ -206,7 +185,6 @@ class OutputRouter {
     // Regular character - add to buffer if we're at a prompt
     if (_atPrompt) {
       _inputBuffer.write(data);
-      print('[OutputRouter] Input buffer now: "${_inputBuffer.toString()}"');
     }
   }
 

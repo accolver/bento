@@ -1,7 +1,7 @@
 // @telos L1:function:lib/features/terminal/presentation/widgets:terminal_view
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
@@ -13,6 +13,9 @@ import '../providers/terminal_provider.dart';
 ///
 /// Wraps the xterm TerminalView widget with configuration from providers
 /// and handles sizing, input, and clipboard operations.
+///
+/// Note: Android back button handling is done at the screen level
+/// (TerminalScreen) to properly handle TUI mode vs normal mode.
 class BentoTerminalView extends ConsumerStatefulWidget {
   const BentoTerminalView({
     super.key,

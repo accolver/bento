@@ -3,13 +3,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:xterm/xterm.dart';
 
 import '../../../../app/router.dart';
 import '../../../../core/constants/terminal_colors.dart';
 import '../../domain/entities/terminal_config.dart';
+import '../../domain/entities/terminal_mode.dart';
 import '../providers/block_provider.dart';
 import '../providers/output_router_provider.dart';
 import '../providers/terminal_config_provider.dart';
+import '../providers/terminal_display_mode_provider.dart';
 import '../providers/terminal_provider.dart';
 import '../widgets/block_list_view.dart';
 import '../widgets/modifier_keys_bar.dart';
@@ -45,9 +48,6 @@ class TerminalScreen extends ConsumerStatefulWidget {
 }
 
 class _TerminalScreenState extends ConsumerState<TerminalScreen> {
-  bool _ctrlActive = false;
-  bool _altActive = false;
-
   @override
   void initState() {
     super.initState();
@@ -82,14 +82,17 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     final brightness = Theme.of(context).brightness;
     final colors = TerminalColors.forBrightness(brightness);
     final config = ref.watch(terminalConfigProvider);
+    // Watch the current display mode (blocks, tui, or classic)
+    final displayMode = ref.watch(currentTerminalModeProvider);
 
     // When embedded, just return the terminal content without Scaffold/AppBar
+    // Back button handling is done by the parent (MultiSessionTerminalScreen)
     if (widget.embedded) {
       return Container(
         color: colors.background,
         child: Column(
           children: [
-            // Main content area
+            // Main content area - switches instantly based on display mode
             Expanded(
               child: GestureDetector(
                 // Ensure tapping on the terminal area requests focus
@@ -98,52 +101,117 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
                   FocusScope.of(context).requestFocus();
                 },
                 behavior: HitTestBehavior.translucent,
-                child: config.enableSemanticBlocks
-                    ? _buildSemanticBlocksView()
-                    : _buildClassicTerminalView(),
+                child: _buildMainContent(displayMode, config),
               ),
             ),
 
-            // Modifier keys bar
-            ModifierKeysBar(
-              onKey: _handleKey,
-              onCtrlToggle: (active) => _ctrlActive = active,
-              onAltToggle: (active) => _altActive = active,
-            ),
+            // Modifier keys bar - always visible
+            ModifierKeysBar(onKey: _handleKey),
           ],
         ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: colors.background,
-      appBar: _buildAppBar(colors, config),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Main content area
-            Expanded(
-              child: config.enableSemanticBlocks
-                  ? _buildSemanticBlocksView()
-                  : _buildClassicTerminalView(),
-            ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleBackButton();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: colors.background,
+        appBar: _buildAppBar(colors, config, displayMode),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Main content area - switches instantly based on display mode
+              Expanded(
+                child: _buildMainContent(displayMode, config),
+              ),
 
-            // Modifier keys bar
-            ModifierKeysBar(
-              onKey: _handleKey,
-              onCtrlToggle: (active) => _ctrlActive = active,
-              onAltToggle: (active) => _altActive = active,
-            ),
-          ],
+              // Modifier keys bar - always visible
+              ModifierKeysBar(onKey: _handleKey),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  /// Handles Android back button press.
+  ///
+  /// In TUI mode, sends Escape to the terminal.
+  /// In other modes, shows a confirmation dialog before disconnecting.
+  void _handleBackButton() {
+    final displayMode = ref.read(currentTerminalModeProvider);
+
+    if (displayMode == TerminalMode.tui) {
+      // In TUI mode, send Escape to the terminal
+      final terminal = ref.read(terminalControllerProvider);
+      terminal.keyInput(TerminalKey.escape);
+    } else {
+      // In blocks/classic mode, show confirmation dialog
+      _showDisconnectConfirmation();
+    }
+  }
+
+  /// Shows a confirmation dialog before disconnecting.
+  Future<void> _showDisconnectConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disconnect?'),
+        content: const Text(
+          'Press back again to disconnect from this session.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      _handleDisconnect();
+    }
+  }
+
+  /// Builds the main content area based on current display mode.
+  ///
+  /// - [TerminalMode.blocks]: Shows BlockListView + terminal input area
+  /// - [TerminalMode.tui]: Shows full-screen terminal for TUI apps (vim, htop, etc.)
+  /// - [TerminalMode.classic]: Shows classic full-screen terminal view
+  Widget _buildMainContent(TerminalMode displayMode, TerminalConfig config) {
+    switch (displayMode) {
+      case TerminalMode.blocks:
+        return _buildSemanticBlocksView();
+      case TerminalMode.tui:
+        // Full-screen terminal for TUI applications
+        // No animation - instant switch for responsiveness
+        return _buildFullScreenTerminalView();
+      case TerminalMode.classic:
+        return _buildClassicTerminalView();
+    }
+  }
+
   PreferredSizeWidget _buildAppBar(
     TerminalColorScheme colors,
     TerminalConfig config,
+    TerminalMode displayMode,
   ) {
+    // In TUI mode, show minimal app bar (no block controls)
+    final isInTuiMode = displayMode == TerminalMode.tui;
+
     return AppBar(
       title: Text(widget.title ?? 'Terminal'),
       backgroundColor: colors.background,
@@ -153,20 +221,21 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         onPressed: _handleDisconnect,
       ),
       actions: [
-        // Connection status indicator
+        // Connection status indicator - always visible
         _ConnectionStatusIndicator(),
-        // Toggle between semantic blocks and classic view
-        IconButton(
-          icon: Icon(
-            config.enableSemanticBlocks ? Icons.view_agenda : Icons.terminal,
+        // Toggle between semantic blocks and classic view (hidden in TUI mode)
+        if (!isInTuiMode)
+          IconButton(
+            icon: Icon(
+              config.enableSemanticBlocks ? Icons.view_agenda : Icons.terminal,
+            ),
+            tooltip: config.enableSemanticBlocks
+                ? 'Switch to classic view'
+                : 'Switch to block view',
+            onPressed: _toggleViewMode,
           ),
-          tooltip: config.enableSemanticBlocks
-              ? 'Switch to classic view'
-              : 'Switch to block view',
-          onPressed: _toggleViewMode,
-        ),
-        // Collapse/expand all (only in semantic blocks mode)
-        if (config.enableSemanticBlocks)
+        // Collapse/expand all (only in semantic blocks mode, hidden in TUI mode)
+        if (!isInTuiMode && config.enableSemanticBlocks)
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: _handleMenuAction,
@@ -213,6 +282,18 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   Widget _buildClassicTerminalView() {
     return BentoTerminalView(
       onResize: _handleResize,
+    );
+  }
+
+  /// Builds full-screen terminal view for TUI applications.
+  ///
+  /// This is used when a TUI app (vim, htop, Claude Code, etc.) activates
+  /// the alternate screen buffer. The terminal fills the available space
+  /// to allow proper TUI rendering.
+  Widget _buildFullScreenTerminalView() {
+    return BentoTerminalView(
+      onResize: _handleResize,
+      autofocus: true,
     );
   }
 
@@ -348,41 +429,13 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     final controller = ref.read(terminalControllerProvider.notifier);
     final config = ref.read(terminalConfigProvider);
 
-    // Build the actual key to send
-    String keyToSend;
-
-    if (_ctrlActive && key.length == 1) {
-      // Convert to control character (e.g., 'c' -> Ctrl+C = 0x03)
-      final char = key.codeUnitAt(0);
-      if (char >= 0x61 && char <= 0x7A) {
-        // a-z
-        keyToSend = String.fromCharCode(char - 0x60);
-      } else if (char >= 0x41 && char <= 0x5A) {
-        // A-Z
-        keyToSend = String.fromCharCode(char - 0x40);
-      } else {
-        keyToSend = key;
-      }
-    } else if (_altActive && key.length == 1) {
-      // Send Alt as Escape prefix
-      keyToSend = '\x1b$key';
-    } else {
-      keyToSend = key;
-    }
-
     // If semantic blocks enabled, route through output router for Ctrl+C detection
     if (config.enableSemanticBlocks) {
-      ref.read(outputRouterControllerProvider.notifier).processInput(keyToSend);
+      ref.read(outputRouterControllerProvider.notifier).processInput(key);
     }
 
     // Send to terminal/SSH
-    controller.write(keyToSend);
-
-    // Reset modifiers after use (one-shot mode)
-    setState(() {
-      _ctrlActive = false;
-      _altActive = false;
-    });
+    controller.write(key);
   }
 }
 

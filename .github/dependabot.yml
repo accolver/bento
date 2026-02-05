@@ -1,0 +1,61 @@
+# Dependabot configuration for automated dependency updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # Pub (Dart/Flutter) dependencies
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "dart"
+    commit-message:
+      prefix: "deps(dart):"
+    # Group minor and patch updates together
+    groups:
+      flutter-packages:
+        patterns:
+          - "flutter_*"
+          - "go_router"
+        update-types:
+          - "minor"
+          - "patch"
+      code-generation:
+        patterns:
+          - "build_runner"
+          - "freezed*"
+          - "json_serializable"
+          - "riverpod_generator"
+          - "drift_dev"
+        update-types:
+          - "minor"
+          - "patch"
+      testing:
+        patterns:
+          - "mocktail"
+          - "flutter_test"
+          - "integration_test"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci:"

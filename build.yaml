@@ -1,0 +1,28 @@
+# Build configuration for code generation
+# This file configures build_runner for optimal performance
+
+targets:
+  $default:
+    builders:
+      # JSON serialization
+      json_serializable|json_serializable:
+        options:
+          # Strict key checking
+          any_map: false
+          checked: true
+          # Explicit conversion
+          explicit_to_json: true
+          # Include fields with null values
+          include_if_null: false
+
+      # Drift database generator
+      drift_dev|drift_dev:
+        options:
+          # Generate companion classes for inserts
+          generate_connect_constructor: true
+          # Use named parameters for data classes
+          named_parameters: true
+          # Apply strict type checking
+          apply_converters_on_variables: true
+          # Generate manager classes for easier table operations
+          generate_manager: true

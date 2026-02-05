@@ -56,6 +56,11 @@ class TerminalController extends _$TerminalController {
   /// Handles output from the terminal (user keystrokes)
   void _handleTerminalOutput(String data) {
     if (_sshDataSource?.isConnected ?? false) {
+      // Route through OutputRouter for command detection if semantic blocks enabled
+      final terminalConfig = ref.read(terminalConfigProvider);
+      if (terminalConfig.enableSemanticBlocks) {
+        ref.read(outputRouterControllerProvider.notifier).processInput(data);
+      }
       _sshDataSource!.writeString(data);
     }
   }

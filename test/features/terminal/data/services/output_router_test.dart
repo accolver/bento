@@ -561,5 +561,134 @@ void main() {
         verify(() => mockController.createBlock('git status')).called(1);
       });
     });
+
+    group('input-based command detection', () {
+      // @telos-scenario L1:...:output_router:input-command-on-enter
+      test('creates block when user presses Enter after typing command', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // First, a prompt appears (sets _atPrompt = true)
+        router.processOutput('❯ \n');
+
+        // User types a command character by character
+        router.processInput('l');
+        router.processInput('s');
+
+        // User presses Enter
+        router.processInput('\r');
+
+        // Block should be created with the typed command
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-no-block-for-empty
+      test('does NOT create block for empty command (just Enter)', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('user@host:~\$ \n');
+
+        // User just presses Enter without typing anything
+        router.processInput('\r');
+
+        verifyNever(() => mockController.createBlock(any()));
+      });
+
+      // @telos-scenario L1:...:output_router:input-handles-backspace
+      test('handles backspace in input', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User types "lss" then backspaces and types correct char
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('s');
+        router.processInput('\x7f'); // Backspace
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-ctrl-c-clears-buffer
+      test('Ctrl+C clears input buffer', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User starts typing
+        router.processInput('s');
+        router.processInput('o');
+        router.processInput('m');
+        router.processInput('e');
+
+        // User presses Ctrl+C
+        router.processInput('\x03');
+
+        // User types new command and presses Enter
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        // Only "ls" should be the command, not "somels"
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-multiword-command
+      test('handles multi-word commands', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User types "git status"
+        for (final char in 'git status'.split('')) {
+          router.processInput(char);
+        }
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('git status')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-requires-prompt-first
+      test('does NOT buffer input before prompt is detected', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // User types before any prompt is shown (shouldn't happen normally)
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        // No block should be created because we weren't at a prompt
+        verifyNever(() => mockController.createBlock(any()));
+      });
+
+      // @telos-scenario L1:...:output_router:input-ctrl-u-clears-line
+      test('Ctrl+U clears input line', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User types something
+        router.processInput('w');
+        router.processInput('r');
+        router.processInput('o');
+        router.processInput('n');
+        router.processInput('g');
+
+        // User presses Ctrl+U to clear line
+        router.processInput('\x15');
+
+        // User types correct command
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+    });
   });
 }

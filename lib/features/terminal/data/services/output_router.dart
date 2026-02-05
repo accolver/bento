@@ -35,6 +35,12 @@ class OutputRouter {
   /// terminal echo or slight formatting differences.
   String? _lastCommand;
 
+  /// Buffer for user input (keystrokes before Enter).
+  final StringBuffer _inputBuffer = StringBuffer();
+
+  /// Whether we've seen a prompt and are ready for user input.
+  bool _atPrompt = false;
+
   /// Callback for processed output (to write to terminal).
   void Function(String)? onProcessedOutput;
 
@@ -75,21 +81,26 @@ class OutputRouter {
         }
 
         // If there's a command on this line, create a new block
+        // (This handles cases where the shell echoes the full prompt+command)
         if (promptResult.command != null && promptResult.command!.isNotEmpty) {
           // Only skip if this exact command just appeared (echo from typing)
           // This happens when terminal echoes back what you typed on same line
           print(
-              '[OutputRouter] Command found: "${promptResult.command}", lastCommand: "$_lastCommand"');
+              '[OutputRouter] Command found in output: "${promptResult.command}", lastCommand: "$_lastCommand"');
           if (promptResult.command != _lastCommand) {
             print(
-                '[OutputRouter] Creating block for command: ${promptResult.command}');
+                '[OutputRouter] Creating block for output command: ${promptResult.command}');
             _lastCommand = promptResult.command;
             _blockController.createBlock(promptResult.command!);
+            _atPrompt = false;
           } else {
             print('[OutputRouter] Skipping duplicate command');
           }
         } else {
           // Just a prompt without command - ready for new input
+          print('[OutputRouter] Prompt detected, ready for input');
+          _atPrompt = true;
+          _inputBuffer.clear(); // Clear any stale input
           _lastCommand = null;
         }
       } else if (_blockController.hasActiveBlock) {
@@ -118,18 +129,77 @@ class OutputRouter {
 
   /// Processes user input (keystrokes).
   ///
-  /// Detects when user types a command at the prompt.
+  /// Tracks keystrokes to build up the command being typed.
+  /// When Enter is pressed, creates a block for the command.
   /// Call this before sending input to SSH.
   void processInput(String data) {
-    // If user presses Enter and we have input, could be a command
-    // But typically we detect commands from the output (echo)
+    print(
+        '[OutputRouter] processInput: ${data.length} chars, data: ${data.codeUnits}');
 
     // Detect Ctrl+C for cancellation
     if (data == '\x03') {
-      // Ctrl+C
+      print('[OutputRouter] Ctrl+C detected');
+      _inputBuffer.clear();
       if (_blockController.hasActiveBlock) {
         _blockController.completeBlock(status: BlockStatus.cancelled);
       }
+      return;
+    }
+
+    // Detect Enter key (creates a block)
+    if (data == '\r' || data == '\n' || data == '\r\n') {
+      final command = _inputBuffer.toString().trim();
+      print('[OutputRouter] Enter pressed, command buffer: "$command"');
+      _inputBuffer.clear();
+
+      if (command.isNotEmpty && _atPrompt) {
+        print('[OutputRouter] Creating block for input command: $command');
+        _lastCommand = command;
+        _blockController.createBlock(command);
+        _atPrompt = false; // We're now running a command, not at prompt
+      }
+      return;
+    }
+
+    // Detect backspace/delete
+    if (data == '\x7f' || data == '\x08') {
+      // Remove last character from buffer
+      final current = _inputBuffer.toString();
+      if (current.isNotEmpty) {
+        _inputBuffer.clear();
+        _inputBuffer.write(current.substring(0, current.length - 1));
+      }
+      return;
+    }
+
+    // Detect Ctrl+U (clear line)
+    if (data == '\x15') {
+      _inputBuffer.clear();
+      return;
+    }
+
+    // Detect Ctrl+W (delete word)
+    if (data == '\x17') {
+      final current = _inputBuffer.toString().trimRight();
+      final lastSpace = current.lastIndexOf(' ');
+      _inputBuffer.clear();
+      if (lastSpace > 0) {
+        _inputBuffer.write(current.substring(0, lastSpace + 1));
+      }
+      return;
+    }
+
+    // Skip other control characters and escape sequences
+    if (data.startsWith('\x1b') ||
+        data.codeUnits.any((c) => c < 32 && c != 9)) {
+      // Allow tab (9) but skip other control chars and escape sequences
+      return;
+    }
+
+    // Regular character - add to buffer if we're at a prompt
+    if (_atPrompt) {
+      _inputBuffer.write(data);
+      print('[OutputRouter] Input buffer now: "${_inputBuffer.toString()}"');
     }
   }
 
@@ -183,7 +253,9 @@ class OutputRouter {
     _flushTimer?.cancel();
     _flushTimer = null;
     _outputBuffer.clear();
+    _inputBuffer.clear();
     _lastCommand = null;
+    _atPrompt = false;
   }
 
   /// Disposes resources.

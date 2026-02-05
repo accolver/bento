@@ -82,7 +82,10 @@ abstract class DatabaseConstants {
   static const String databaseName = 'bento.db';
 
   /// Current database schema version
-  static const int schemaVersion = 1;
+  /// v1: Initial schema with SavedConnections
+  /// v2: Added CredentialMetadata table
+  /// v3: Added Blocks table for semantic blocks
+  static const int schemaVersion = 3;
 }
 
 /// Animation-related constants.

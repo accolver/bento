@@ -46,6 +46,14 @@ class CacheFailure extends Failure {
   });
 }
 
+/// Failure when database operations fail.
+class DatabaseFailure extends Failure {
+  const DatabaseFailure({
+    super.message = 'Database operation failed',
+    super.code = 'DATABASE_ERROR',
+  });
+}
+
 /// Failure when input validation fails.
 class ValidationFailure extends Failure {
   const ValidationFailure({

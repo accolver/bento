@@ -3,10 +3,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:xterm/xterm.dart';
 
 import '../../../../app/router.dart';
 import '../../../../core/constants/terminal_colors.dart';
 import '../../../terminal/domain/entities/ssh_connection_config.dart';
+import '../../../terminal/domain/entities/terminal_mode.dart';
+import '../../../terminal/presentation/providers/terminal_display_mode_provider.dart';
+import '../../../terminal/presentation/providers/terminal_provider.dart';
 import '../../../terminal/presentation/screens/terminal_screen.dart';
 import '../../domain/entities/session.dart';
 import '../../domain/entities/session_status.dart';
@@ -65,37 +69,99 @@ class _MultiSessionTerminalScreenState
     final brightness = Theme.of(context).brightness;
     final colors = TerminalColors.forBrightness(brightness);
 
-    return Scaffold(
-      backgroundColor: colors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Combined header: tab bar with actions
-            _CombinedHeader(
-              sessions: sessionState.sessions,
-              activeSessionId: sessionState.activeSessionId,
-              activeSession: activeSession,
-              onTabSelected: _handleTabSelected,
-              onTabClose: _handleTabClose,
-              onAddTap: _handleAddSession,
-              onDisconnect: activeSession != null
-                  ? () => _handleTabClose(activeSession.id)
-                  : null,
-            ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleBackButton();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: colors.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Combined header: tab bar with actions
+              _CombinedHeader(
+                sessions: sessionState.sessions,
+                activeSessionId: sessionState.activeSessionId,
+                activeSession: activeSession,
+                onTabSelected: _handleTabSelected,
+                onTabClose: _handleTabClose,
+                onAddTap: _handleAddSession,
+                onDisconnect: activeSession != null
+                    ? () => _handleTabClose(activeSession.id)
+                    : null,
+              ),
 
-            // Active session terminal (or empty state)
-            Expanded(
-              child: activeSession != null
-                  ? _SessionTerminalView(
-                      key: ValueKey(activeSession.id),
-                      session: activeSession,
-                    )
-                  : _EmptySessionState(onAddSession: _handleAddSession),
-            ),
-          ],
+              // Active session terminal (or empty state)
+              Expanded(
+                child: activeSession != null
+                    ? _SessionTerminalView(
+                        key: ValueKey(activeSession.id),
+                        session: activeSession,
+                      )
+                    : _EmptySessionState(onAddSession: _handleAddSession),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Handles Android back button press.
+  ///
+  /// In TUI mode, sends Escape to the terminal.
+  /// Otherwise, shows confirmation to close the active session.
+  void _handleBackButton() {
+    final displayMode = ref.read(currentTerminalModeProvider);
+    final sessionState = ref.read(sessionListControllerProvider);
+
+    if (displayMode == TerminalMode.tui) {
+      // In TUI mode, send Escape to the terminal
+      final terminal = ref.read(terminalControllerProvider);
+      terminal.keyInput(TerminalKey.escape);
+    } else if (sessionState.activeSession != null) {
+      // Show confirmation to close the active session
+      _showBackConfirmation();
+    } else {
+      // No active session, go home
+      context.go(Routes.home);
+    }
+  }
+
+  /// Shows confirmation dialog when back is pressed with active session.
+  Future<void> _showBackConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Close Session?'),
+        content: const Text(
+          'Press back again to close this session and disconnect.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final activeId = ref.read(sessionListControllerProvider).activeSessionId;
+      if (activeId != null) {
+        ref.read(sessionListControllerProvider.notifier).closeSession(activeId);
+      }
+    }
   }
 
   void _handleTabSelected(String sessionId) {

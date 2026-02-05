@@ -210,8 +210,8 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
         });
         // Connection successful - navigate to sessions screen
         if (mounted) {
-          // Go to sessions screen which shows the tab bar
-          context.go(Routes.sessions);
+          // Push sessions screen so back button can return to previous screen
+          context.push(Routes.sessions);
         }
       },
     );

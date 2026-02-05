@@ -4,8 +4,10 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../data/services/output_router.dart';
 import '../../data/services/prompt_detector.dart';
+import '../../data/services/tui_mode_detector.dart';
 import 'block_provider.dart';
 import 'terminal_config_provider.dart';
+import 'terminal_display_mode_provider.dart';
 import 'terminal_provider.dart';
 
 part 'output_router_provider.g.dart';
@@ -14,14 +16,16 @@ part 'output_router_provider.g.dart';
 ///
 /// The OutputRouter intercepts terminal output, detects command boundaries,
 /// and routes data to the BlockListController for semantic block display.
+/// Also handles TUI mode detection and automatic pause/resume of block processing.
 @Riverpod(keepAlive: true)
 class OutputRouterController extends _$OutputRouterController {
   OutputRouter? _router;
+  TuiModeDetector? _tuiModeDetector;
 
   @override
   OutputRouter? build() {
     // Get dependencies
-    // Use ref.read to avoid rebuilds - we only need the notifier reference once
+    // Use ref.read instead of ref.watch to avoid rebuilds - we only need the notifier reference once
     final blockController = ref.read(blockListControllerProvider.notifier);
     final config = ref.read(terminalConfigProvider);
 
@@ -35,10 +39,14 @@ class OutputRouterController extends _$OutputRouterController {
       promptDetector = PromptDetector();
     }
 
-    // Create output router
+    // Create TUI mode detector
+    _tuiModeDetector = TuiModeDetector();
+
+    // Create output router with TUI mode detection
     _router = OutputRouter(
       blockController: blockController,
       promptDetector: promptDetector,
+      tuiModeDetector: _tuiModeDetector,
     );
 
     // Set up the terminal write callback automatically
@@ -48,9 +56,28 @@ class OutputRouterController extends _$OutputRouterController {
       terminal.write(data);
     };
 
+    // Wire up TUI mode callbacks to update display mode provider and create blocks
+    _router!.onTuiModeEnter = (triggeringCommand) {
+      // Update display mode state
+      ref.read(terminalDisplayModeProvider.notifier).enterTuiMode(
+            triggeringCommand: triggeringCommand,
+          );
+      // Create a TUI session block to record this session
+      ref
+          .read(blockListControllerProvider.notifier)
+          .createTuiSessionBlock(triggeringCommand);
+    };
+    _router!.onTuiModeExit = () {
+      // Complete the TUI session block
+      ref.read(blockListControllerProvider.notifier).completeTuiSessionBlock();
+      // Update display mode state
+      ref.read(terminalDisplayModeProvider.notifier).exitTuiMode();
+    };
+
     // Clean up on dispose
     ref.onDispose(() {
       _router?.dispose();
+      _tuiModeDetector?.dispose();
     });
 
     return _router;
@@ -73,7 +100,10 @@ class OutputRouterController extends _$OutputRouterController {
   /// Resets the router state.
   ///
   /// Call when starting a new session or disconnecting.
+  /// Also cancels any active TUI session to properly record interruption.
   void reset() {
+    // Cancel any active TUI session before resetting
+    ref.read(blockListControllerProvider.notifier).cancelActiveTuiSession();
     _router?.reset();
   }
 
@@ -93,5 +123,21 @@ class OutputRouterController extends _$OutputRouterController {
   /// Useful for dismissing the keyboard.
   void setCommandSubmittedCallback(void Function() callback) {
     _router?.onCommandSubmitted = callback;
+  }
+
+  /// Whether the router is currently paused (e.g., during TUI mode).
+  bool get isPaused => _router?.isPaused ?? false;
+
+  /// Whether we're currently in TUI mode.
+  bool get isInTuiMode => _router?.isInTuiMode ?? false;
+
+  /// Manually pause block detection.
+  void pause() {
+    _router?.pause();
+  }
+
+  /// Manually resume block detection.
+  void resume() {
+    _router?.resume();
   }
 }

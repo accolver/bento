@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:bento/features/terminal/data/services/output_router.dart';
 import 'package:bento/features/terminal/data/services/prompt_detector.dart';
+import 'package:bento/features/terminal/data/services/tui_mode_detector.dart';
 import 'package:bento/features/terminal/domain/entities/block.dart';
 import 'package:bento/features/terminal/domain/entities/block_status.dart';
 import 'package:bento/features/terminal/presentation/providers/block_provider.dart';
@@ -688,6 +689,176 @@ void main() {
         router.processInput('\r');
 
         verify(() => mockController.createBlock('ls')).called(1);
+      });
+    });
+
+    group('TUI mode detection', () {
+      late OutputRouter tuiRouter;
+      late List<String?> tuiEnterCommands;
+      late int tuiExitCount;
+
+      setUp(() {
+        tuiEnterCommands = [];
+        tuiExitCount = 0;
+
+        // Create router with TUI mode detection
+        tuiRouter = OutputRouter(
+          blockController: mockController,
+          tuiModeDetector: TuiModeDetector(
+              debounceDuration: const Duration(milliseconds: 5)),
+          bufferDuration: const Duration(milliseconds: 1),
+        );
+
+        tuiRouter.onTuiModeEnter = (command) {
+          tuiEnterCommands.add(command);
+        };
+        tuiRouter.onTuiModeExit = () {
+          tuiExitCount++;
+        };
+      });
+
+      tearDown(() {
+        tuiRouter.dispose();
+      });
+
+      // @telos-scenario L1:...:output_router:tui-detects-smcup
+      test('detects TUI mode when smcup is in output', () async {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // User runs vim
+        tuiRouter.processOutput('user@host:~\$ vim file.txt\n');
+
+        // vim outputs smcup (alternate screen)
+        tuiRouter.processOutput('\x1b[?1049h');
+
+        // Wait for debounce
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(tuiRouter.isInTuiMode, isTrue);
+        expect(tuiRouter.isPaused, isTrue);
+        expect(tuiEnterCommands, hasLength(1));
+      });
+
+      // @telos-scenario L1:...:output_router:tui-pauses-block-detection
+      test('pauses block detection during TUI mode', () async {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Enter TUI mode
+        tuiRouter.processOutput('\x1b[?1049h');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        // Output that would normally create a block
+        tuiRouter.processOutput('user@host:~\$ ls\n');
+
+        // Should not create a block while paused
+        verifyNever(() => mockController.createBlock(any()));
+      });
+
+      // @telos-scenario L1:...:output_router:tui-forwards-output
+      test('continues forwarding output to terminal during TUI mode', () async {
+        var outputReceived = '';
+        tuiRouter.onProcessedOutput = (data) {
+          outputReceived += data;
+        };
+
+        // Enter TUI mode
+        tuiRouter.processOutput('\x1b[?1049h');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        // TUI application output
+        tuiRouter.processOutput('vim content here');
+
+        // Output should still be forwarded
+        expect(outputReceived, contains('vim content here'));
+      });
+
+      // @telos-scenario L1:...:output_router:tui-detects-rmcup
+      test('exits TUI mode when rmcup is detected', () async {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Enter TUI mode
+        tuiRouter.processOutput('\x1b[?1049h');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(tuiRouter.isInTuiMode, isTrue);
+
+        // Exit TUI mode (user exits vim)
+        tuiRouter.processOutput('\x1b[?1049l');
+
+        // Wait for async event handling
+        await Future.microtask(() {});
+
+        expect(tuiRouter.isInTuiMode, isFalse);
+        expect(tuiRouter.isPaused, isFalse);
+        expect(tuiExitCount, equals(1));
+      });
+
+      // @telos-scenario L1:...:output_router:tui-resumes-block-detection
+      test('resumes block detection after TUI mode exits', () async {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Enter and exit TUI mode
+        tuiRouter.processOutput('\x1b[?1049h');
+        await Future.delayed(const Duration(milliseconds: 10));
+        tuiRouter.processOutput('\x1b[?1049l');
+
+        // Wait for async event handling
+        await Future.microtask(() {});
+
+        // Now run a normal command
+        tuiRouter.processOutput('user@host:~\$ ls\n');
+
+        // Block should be created now that TUI mode is off
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:tui-reset-clears-state
+      test('reset clears TUI mode state', () async {
+        // Enter TUI mode
+        tuiRouter.processOutput('\x1b[?1049h');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(tuiRouter.isInTuiMode, isTrue);
+
+        // Reset
+        tuiRouter.reset();
+
+        expect(tuiRouter.isPaused, isFalse);
+      });
+
+      // @telos-scenario L1:...:output_router:tui-captures-triggering-command
+      test('captures triggering command when entering TUI mode', () async {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Set last command hint
+        tuiRouter.setLastCommandHint('htop');
+
+        // Enter TUI mode
+        tuiRouter.processOutput('\x1b[?1049h');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(tuiEnterCommands, ['htop']);
+      });
+
+      // @telos-scenario L1:...:output_router:manual-pause-resume
+      test('manual pause and resume work', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        expect(tuiRouter.isPaused, isFalse);
+
+        tuiRouter.pause();
+        expect(tuiRouter.isPaused, isTrue);
+
+        // Command should be ignored while paused
+        tuiRouter.processOutput('user@host:~\$ ignored\n');
+        verifyNever(() => mockController.createBlock(any()));
+
+        tuiRouter.resume();
+        expect(tuiRouter.isPaused, isFalse);
+
+        // Command should work after resume
+        tuiRouter.processOutput('user@host:~\$ working\n');
+        verify(() => mockController.createBlock('working')).called(1);
       });
     });
   });

@@ -56,12 +56,23 @@ class TerminalController extends _$TerminalController {
   /// Handles output from the terminal (user keystrokes)
   void _handleTerminalOutput(String data) {
     if (_sshDataSource?.isConnected ?? false) {
+      // Transform newlines: soft keyboards may send LF (\n) but terminals
+      // expect CR (\r) for Enter. Replace \n with \r for proper behavior.
+      // Note: Don't replace \r\n as that's already correct for some modes.
+      var transformedData = data;
+      if (data == '\n') {
+        // Single newline from soft keyboard Enter key
+        transformedData = '\r';
+      }
+
       // Route through OutputRouter for command detection if semantic blocks enabled
       final terminalConfig = ref.read(terminalConfigProvider);
       if (terminalConfig.enableSemanticBlocks) {
-        ref.read(outputRouterControllerProvider.notifier).processInput(data);
+        ref
+            .read(outputRouterControllerProvider.notifier)
+            .processInput(transformedData);
       }
-      _sshDataSource!.writeString(data);
+      _sshDataSource!.writeString(transformedData);
     }
   }
 

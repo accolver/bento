@@ -1,28 +1,42 @@
 // @telos L1:function:lib/features/terminal/data/services:output_router
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import '../../domain/entities/block_status.dart';
 import '../../presentation/providers/block_provider.dart';
 import 'prompt_detector.dart';
+import 'tui_mode_detector.dart';
 
 /// Routes terminal output to semantic blocks.
 ///
 /// Intercepts terminal output, detects command/output boundaries using
 /// prompt detection, and routes data to the [BlockListController].
 /// Implements output buffering for efficient batch updates.
+///
+/// Also integrates with [TuiModeDetector] to pause block processing
+/// when a TUI application (vim, htop, etc.) is active.
 class OutputRouter {
   OutputRouter({
     required BlockListController blockController,
     PromptDetector? promptDetector,
+    TuiModeDetector? tuiModeDetector,
     Duration bufferDuration = const Duration(milliseconds: 16),
   })  : _blockController = blockController,
         _promptDetector = promptDetector ?? PromptDetector(),
-        _bufferDuration = bufferDuration;
+        _tuiModeDetector = tuiModeDetector,
+        _bufferDuration = bufferDuration {
+    // Listen to TUI mode events if detector is provided
+    _tuiModeSubscription = _tuiModeDetector?.events.listen(_handleTuiModeEvent);
+  }
 
   final BlockListController _blockController;
   final PromptDetector _promptDetector;
+  final TuiModeDetector? _tuiModeDetector;
   final Duration _bufferDuration;
+
+  /// Subscription to TUI mode events.
+  StreamSubscription<TuiModeEvent>? _tuiModeSubscription;
 
   /// Buffer for collecting output before flushing.
   final StringBuffer _outputBuffer = StringBuffer();
@@ -41,6 +55,9 @@ class OutputRouter {
   /// Whether we've seen a prompt and are ready for user input.
   bool _atPrompt = false;
 
+  /// Whether block detection is paused (e.g., during TUI mode).
+  bool _isPaused = false;
+
   /// Callback for processed output (to write to terminal).
   void Function(String)? onProcessedOutput;
 
@@ -48,11 +65,39 @@ class OutputRouter {
   /// Used to dismiss the keyboard after sending a command.
   void Function()? onCommandSubmitted;
 
+  /// Callback when TUI mode is detected.
+  /// Called with the triggering command (if known) when smcup is detected.
+  void Function(String?)? onTuiModeEnter;
+
+  /// Callback when TUI mode ends.
+  /// Called when rmcup is detected.
+  void Function()? onTuiModeExit;
+
+  /// Whether block detection is currently paused.
+  bool get isPaused => _isPaused;
+
+  /// Whether we're currently in TUI mode.
+  bool get isInTuiMode => _tuiModeDetector?.isActive ?? false;
+
   /// Processes incoming output from SSH/PTY.
   ///
   /// Detects prompts, creates blocks for commands, and buffers output
   /// for efficient updates. Call this for each chunk of data received.
+  ///
+  /// Also monitors for TUI mode escape sequences and pauses block
+  /// processing during TUI mode.
   void processOutput(String data) {
+    // Check for TUI mode transitions (before any other processing)
+    _checkTuiModeTransitions(data);
+
+    // Forward raw output to terminal (always, regardless of pause state)
+    onProcessedOutput?.call(data);
+
+    // If paused (TUI mode active), skip block processing
+    if (_isPaused) {
+      return;
+    }
+
     // Normalize line endings and split into lines for prompt detection
     // Terminals may use \r\n (CRLF), \n (LF), or just \r (CR)
     final normalizedData = data.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
@@ -111,9 +156,57 @@ class OutputRouter {
     if (_outputBuffer.isNotEmpty) {
       _scheduleFlush();
     }
+  }
 
-    // Forward raw output to terminal (if callback set)
-    onProcessedOutput?.call(data);
+  /// Check for TUI mode transitions in the output data.
+  void _checkTuiModeTransitions(String data) {
+    if (_tuiModeDetector == null) return;
+
+    // Convert string to bytes for TUI detector
+    final bytes = Uint8List.fromList(data.codeUnits);
+
+    // Just pass data to detector - events will be handled by _handleTuiModeEvent
+    _tuiModeDetector.processOutput(bytes);
+  }
+
+  /// Handle TUI mode events from the detector.
+  void _handleTuiModeEvent(TuiModeEvent event) {
+    switch (event) {
+      case TuiModeActivated(:final triggeringCommand):
+        _enterTuiMode(triggeringCommand);
+      case TuiModeDeactivated():
+        _exitTuiMode();
+    }
+  }
+
+  /// Called when entering TUI mode (smcup detected).
+  void _enterTuiMode([String? triggeringCommand]) {
+    _isPaused = true;
+
+    // Flush any pending output before pausing
+    _flushBuffer();
+
+    // Notify callback with the triggering command from detector or fallback
+    onTuiModeEnter?.call(triggeringCommand ?? _lastCommand);
+  }
+
+  /// Called when exiting TUI mode (rmcup detected).
+  void _exitTuiMode() {
+    _isPaused = false;
+
+    // Notify callback
+    onTuiModeExit?.call();
+  }
+
+  /// Pause block detection (manually, if not using TUI detection).
+  void pause() {
+    _isPaused = true;
+    _flushBuffer();
+  }
+
+  /// Resume block detection.
+  void resume() {
+    _isPaused = false;
   }
 
   /// Processes user input (keystrokes).
@@ -241,12 +334,16 @@ class OutputRouter {
     _inputBuffer.clear();
     _lastCommand = null;
     _atPrompt = false;
+    _isPaused = false;
+    _tuiModeDetector?.reset();
   }
 
   /// Disposes resources.
   void dispose() {
     _flushTimer?.cancel();
     _flushTimer = null;
+    _tuiModeSubscription?.cancel();
+    _tuiModeSubscription = null;
   }
 
   /// Creates an output router with custom prompt patterns.
@@ -254,7 +351,17 @@ class OutputRouter {
     return OutputRouter(
       blockController: _blockController,
       promptDetector: _promptDetector.withCustomPatterns(patterns),
+      tuiModeDetector: _tuiModeDetector,
       bufferDuration: _bufferDuration,
     );
+  }
+
+  /// Set the last command hint for TUI mode detection.
+  ///
+  /// Call this when a command is about to be executed so the TUI detector
+  /// can capture the triggering command.
+  void setLastCommandHint(String command) {
+    _lastCommand = command;
+    _tuiModeDetector?.setLastCommand(command);
   }
 }

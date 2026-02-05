@@ -44,47 +44,31 @@ class SessionTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: sessions.map((session) {
-                  final isActive = session.id == activeSessionId;
-                  return _SessionTab(
-                    session: session,
-                    isActive: isActive,
-                    onTap: () => onTabSelected(session.id),
-                    onClose: onTabClose != null
-                        ? () => onTabClose!(session.id)
-                        : null,
-                    onLongPress: onTabLongPress != null
-                        ? () => onTabLongPress!(session.id)
-                        : null,
-                  );
-                }).toList(),
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: sessions.map((session) {
+                final isActive = session.id == activeSessionId;
+                return _SessionTab(
+                  session: session,
+                  isActive: isActive,
+                  onTap: () => onTabSelected(session.id),
+                  onClose:
+                      onTabClose != null ? () => onTabClose!(session.id) : null,
+                  onLongPress: onTabLongPress != null
+                      ? () => onTabLongPress!(session.id)
+                      : null,
+                );
+              }).toList(),
             ),
           ),
-          _AddButton(onTap: onAddTap),
-        ],
-      ),
+        ),
+        _AddButton(onTap: onAddTap),
+      ],
     );
   }
 }
@@ -108,19 +92,16 @@ class _SessionTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
       child: Material(
-        color: isActive
-            ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: isActive ? Colors.grey[800] : Colors.grey[900],
+        borderRadius: BorderRadius.circular(6),
         child: InkWell(
           onTap: onTap,
           onLongPress: onLongPress,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           child: Container(
             constraints: const BoxConstraints(
               minWidth: 80,
@@ -138,9 +119,7 @@ class _SessionTab extends StatelessWidget {
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight:
                           isActive ? FontWeight.w600 : FontWeight.normal,
-                      color: isActive
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant,
+                      color: isActive ? Colors.white : Colors.white70,
                     ),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
@@ -235,10 +214,10 @@ class _CloseButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Icon(
+      child: const Icon(
         Icons.close,
         size: 16,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        color: Colors.white54,
       ),
     );
   }
@@ -252,8 +231,6 @@ class _AddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: IconButton(
@@ -261,8 +238,8 @@ class _AddButton extends StatelessWidget {
         icon: const Icon(Icons.add),
         iconSize: 20,
         style: IconButton.styleFrom(
-          backgroundColor: colorScheme.primaryContainer,
-          foregroundColor: colorScheme.onPrimaryContainer,
+          backgroundColor: Colors.grey[800],
+          foregroundColor: Colors.white,
           minimumSize: const Size(32, 32),
           padding: EdgeInsets.zero,
         ),

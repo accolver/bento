@@ -26,10 +26,19 @@ class TerminalScreen extends ConsumerStatefulWidget {
   const TerminalScreen({
     super.key,
     this.title,
+    this.embedded = false,
+    this.onDisconnect,
   });
 
   /// Optional title for the terminal (e.g., connection name).
   final String? title;
+
+  /// Whether this screen is embedded in another screen (e.g., multi-session).
+  /// When true, the app bar is not rendered.
+  final bool embedded;
+
+  /// Callback when disconnect is requested (for embedded mode).
+  final VoidCallback? onDisconnect;
 
   @override
   ConsumerState<TerminalScreen> createState() => _TerminalScreenState();
@@ -73,6 +82,38 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     final brightness = Theme.of(context).brightness;
     final colors = TerminalColors.forBrightness(brightness);
     final config = ref.watch(terminalConfigProvider);
+
+    // When embedded, just return the terminal content without Scaffold/AppBar
+    if (widget.embedded) {
+      return Container(
+        color: colors.background,
+        child: Column(
+          children: [
+            // Main content area
+            Expanded(
+              child: GestureDetector(
+                // Ensure tapping on the terminal area requests focus
+                onTap: () {
+                  // This ensures keyboard appears when tapping the terminal
+                  FocusScope.of(context).requestFocus();
+                },
+                behavior: HitTestBehavior.translucent,
+                child: config.enableSemanticBlocks
+                    ? _buildSemanticBlocksView()
+                    : _buildClassicTerminalView(),
+              ),
+            ),
+
+            // Modifier keys bar
+            ModifierKeysBar(
+              onKey: _handleKey,
+              onCtrlToggle: (active) => _ctrlActive = active,
+              onAltToggle: (active) => _altActive = active,
+            ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: colors.background,

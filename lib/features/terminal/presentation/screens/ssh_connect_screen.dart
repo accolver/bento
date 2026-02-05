@@ -10,10 +10,11 @@ import '../../../connections/presentation/providers/saved_connections_provider.d
 import '../../../credentials/domain/entities/credential.dart';
 import '../../../credentials/presentation/providers/credential_providers.dart';
 import '../../../credentials/presentation/screens/key_list_screen.dart';
+import '../../../session/domain/entities/session_status.dart';
 import '../../../session/presentation/providers/session_list_controller.dart';
-import '../../../session/presentation/providers/session_terminal_controller.dart';
 import '../../domain/entities/ssh_auth_method.dart';
 import '../../domain/entities/ssh_connection_config.dart';
+import '../providers/terminal_provider.dart';
 
 /// Screen for entering SSH connection details and connecting.
 ///
@@ -150,17 +151,17 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
             ? _connectionNameController.text.trim()
             : '$username@$host');
 
-    // Create a new session
+    // Create a new session for tab display
     final sessionId =
         ref.read(sessionListControllerProvider.notifier).createSession(
               config: config,
               name: sessionName,
             );
 
-    // Connect via the session terminal manager
-    final result = await ref
-        .read(sessionTerminalManagerProvider.notifier)
-        .connectSession(sessionId, config);
+    // Connect via the shared terminal controller (for now)
+    // TODO: Use per-session terminals once TerminalScreen is updated
+    final result =
+        await ref.read(terminalControllerProvider.notifier).connectSSH(config);
 
     if (!mounted) return;
 
@@ -177,6 +178,12 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
         });
       },
       (_) async {
+        // Mark session as connected
+        ref.read(sessionListControllerProvider.notifier).updateSessionStatus(
+              sessionId,
+              SessionStatus.connected,
+            );
+
         try {
           // Save connection if requested
           if (_saveConnection && savedConnection == null) {

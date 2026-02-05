@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router.dart';
+import '../../../../core/constants/terminal_colors.dart';
 import '../../../terminal/domain/entities/ssh_connection_config.dart';
 import '../../../terminal/presentation/screens/terminal_screen.dart';
 import '../../domain/entities/session.dart';
@@ -61,18 +62,25 @@ class _MultiSessionTerminalScreenState
   Widget build(BuildContext context) {
     final sessionState = ref.watch(sessionListControllerProvider);
     final activeSession = sessionState.activeSession;
+    final brightness = Theme.of(context).brightness;
+    final colors = TerminalColors.forBrightness(brightness);
 
     return Scaffold(
+      backgroundColor: colors.background,
       body: SafeArea(
         child: Column(
           children: [
-            // Session tab bar
-            SessionTabBar(
+            // Combined header: tab bar with actions
+            _CombinedHeader(
               sessions: sessionState.sessions,
               activeSessionId: sessionState.activeSessionId,
+              activeSession: activeSession,
               onTabSelected: _handleTabSelected,
               onTabClose: _handleTabClose,
               onAddTap: _handleAddSession,
+              onDisconnect: activeSession != null
+                  ? () => _handleTabClose(activeSession.id)
+                  : null,
             ),
 
             // Active session terminal (or empty state)
@@ -143,6 +151,98 @@ class _MultiSessionTerminalScreenState
   }
 }
 
+/// Combined header with tab bar and action buttons.
+///
+/// Integrates the session tabs with close/menu buttons in a single header
+/// with a distinct background color.
+class _CombinedHeader extends StatelessWidget {
+  const _CombinedHeader({
+    required this.sessions,
+    required this.activeSessionId,
+    required this.activeSession,
+    required this.onTabSelected,
+    required this.onTabClose,
+    required this.onAddTap,
+    this.onDisconnect,
+  });
+
+  final List<Session> sessions;
+  final String? activeSessionId;
+  final Session? activeSession;
+  final void Function(String sessionId) onTabSelected;
+  final void Function(String sessionId) onTabClose;
+  final VoidCallback onAddTap;
+  final VoidCallback? onDisconnect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      color: Colors.black,
+      child: Row(
+        children: [
+          // Close/back button
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white70),
+            onPressed: onDisconnect ?? () => context.go(Routes.home),
+            tooltip: 'Close session',
+          ),
+
+          // Session tabs (scrollable)
+          Expanded(
+            child: SessionTabBar(
+              sessions: sessions,
+              activeSessionId: activeSessionId,
+              onTabSelected: onTabSelected,
+              onTabClose: onTabClose,
+              onAddTap: onAddTap,
+            ),
+          ),
+
+          // Connection status indicator
+          if (activeSession != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _StatusDot(status: activeSession!.status),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Simple status dot for header.
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.status});
+
+  final SessionStatus status;
+
+  Color get _color {
+    switch (status) {
+      case SessionStatus.connected:
+        return Colors.green;
+      case SessionStatus.connecting:
+      case SessionStatus.reconnecting:
+        return Colors.orange;
+      case SessionStatus.disconnected:
+      case SessionStatus.failed:
+        return Colors.red;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: _color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}
+
 /// Terminal view for a specific session.
 ///
 /// This wraps the existing TerminalScreen with session-specific state management.
@@ -175,10 +275,10 @@ class _SessionTerminalViewState extends ConsumerState<_SessionTerminalView> {
 
   @override
   Widget build(BuildContext context) {
-    // For now, just render the existing terminal screen
-    // The session ID could be used to manage separate terminal instances
+    // Render terminal in embedded mode (no app bar, just content)
     return TerminalScreen(
       title: widget.session.displayName,
+      embedded: true,
     );
   }
 }

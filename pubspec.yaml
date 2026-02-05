@@ -55,12 +55,20 @@ dependencies:
   # Secure Storage
   flutter_secure_storage: ^9.0.0
 
+  # Biometric Authentication
+  local_auth: ^2.2.0
+
+  # File Picker
+  file_picker: ^8.0.0
+
   # Platform
   device_info_plus: ^10.1.0
   package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # Code Generation
@@ -89,4 +97,11 @@ flutter:
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf
         - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+    # Nerd Font version with Unicode glyphs for Starship/Powerline prompts
+    # Note: Use custom family name since the internal name has spaces
+    - family: JetBrainsMonoNF
+      fonts:
+        - asset: assets/fonts/JetBrainsMonoNerdFont-Regular.ttf
+        - asset: assets/fonts/JetBrainsMonoNerdFont-Bold.ttf
           weight: 700

@@ -54,7 +54,14 @@ class _BentoTerminalViewState extends ConsumerState<BentoTerminalView> {
           theme: theme,
           textStyle: TerminalStyle(
             fontSize: config.fontSize,
+            // Use Nerd Font as primary - contains all standard chars + special icons
+            // The Nerd Font includes complete coverage so minimal fallback needed
             fontFamily: config.fontFamily,
+            // Minimal fallback - Nerd Font should have everything needed
+            // Only fall back for emoji which are in different Unicode blocks
+            fontFamilyFallback: const [
+              'Noto Color Emoji', // For actual emoji (not Nerd Font icons)
+            ],
           ),
           autofocus: widget.autofocus,
           onSecondaryTapDown: _handleSecondaryTap,
@@ -81,9 +88,9 @@ class _BentoTerminalViewState extends ConsumerState<BentoTerminalView> {
     if (_lastDimensions != dimensions) {
       _lastDimensions = dimensions;
 
-      // Resize the terminal backend
-      final terminal = ref.read(terminalControllerProvider);
-      terminal.resize(dimensions.columns, dimensions.rows);
+      // Resize the terminal via controller (which also resizes SSH PTY)
+      final controller = ref.read(terminalControllerProvider.notifier);
+      controller.resize(dimensions.columns, dimensions.rows);
 
       // Notify callback
       widget.onResize?.call(dimensions);

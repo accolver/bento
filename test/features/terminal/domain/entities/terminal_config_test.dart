@@ -11,7 +11,8 @@ void main() {
     test('has sensible default values', () {
       const config = TerminalConfig();
 
-      expect(config.fontFamily, 'JetBrainsMono');
+      expect(
+          config.fontFamily, 'JetBrainsMonoNF'); // Nerd Font for Unicode glyphs
       expect(config.fontSize, 14.0);
       expect(config.lineHeight, 1.2);
       expect(config.scrollbackLines, 10000);

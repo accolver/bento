@@ -8,13 +8,16 @@ import 'package:flutter/material.dart';
 /// Contains settings for fonts, colors, dimensions, and behavior.
 class TerminalConfig extends Equatable {
   const TerminalConfig({
-    this.fontFamily = 'JetBrainsMono',
+    // Use Nerd Font version for Unicode glyph support (Starship, Powerline, etc.)
+    this.fontFamily = 'JetBrainsMonoNF',
     this.fontSize = 14.0,
     this.lineHeight = 1.2,
     this.cursorBlinkInterval = const Duration(milliseconds: 500),
     this.scrollbackLines = 10000,
     this.minColumns = 20,
     this.minRows = 5,
+    this.enableSemanticBlocks = true,
+    this.customPromptPatterns = const [],
   });
 
   /// Font family for terminal text.
@@ -38,6 +41,18 @@ class TerminalConfig extends Equatable {
   /// Minimum number of rows.
   final int minRows;
 
+  /// Whether semantic blocks are enabled.
+  ///
+  /// When true, commands and output are grouped into collapsible blocks.
+  /// When false, classic continuous terminal output is used.
+  final bool enableSemanticBlocks;
+
+  /// Custom regex patterns for shell prompt detection.
+  ///
+  /// These patterns are used in addition to the default patterns
+  /// to detect when a new command is being entered.
+  final List<String> customPromptPatterns;
+
   /// Calculate the character height based on font size and line height.
   double get charHeight => fontSize * lineHeight;
 
@@ -50,6 +65,8 @@ class TerminalConfig extends Equatable {
     int? scrollbackLines,
     int? minColumns,
     int? minRows,
+    bool? enableSemanticBlocks,
+    List<String>? customPromptPatterns,
   }) {
     return TerminalConfig(
       fontFamily: fontFamily ?? this.fontFamily,
@@ -59,6 +76,8 @@ class TerminalConfig extends Equatable {
       scrollbackLines: scrollbackLines ?? this.scrollbackLines,
       minColumns: minColumns ?? this.minColumns,
       minRows: minRows ?? this.minRows,
+      enableSemanticBlocks: enableSemanticBlocks ?? this.enableSemanticBlocks,
+      customPromptPatterns: customPromptPatterns ?? this.customPromptPatterns,
     );
   }
 
@@ -71,6 +90,8 @@ class TerminalConfig extends Equatable {
         scrollbackLines,
         minColumns,
         minRows,
+        enableSemanticBlocks,
+        customPromptPatterns,
       ];
 }
 

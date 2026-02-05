@@ -50,6 +50,11 @@ class TerminalBlock with _$TerminalBlock {
 
     /// Whether output was truncated in memory.
     @Default(false) bool isTruncated,
+
+    /// Whether this block represents a TUI session (vim, htop, etc.).
+    /// TUI session blocks don't capture output - they just record
+    /// the command, duration, and exit status.
+    @Default(false) bool isTuiSession,
   }) = _TerminalBlock;
 
   const TerminalBlock._();

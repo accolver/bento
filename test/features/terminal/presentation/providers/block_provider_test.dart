@@ -410,6 +410,134 @@ void main() {
         expect(stateChangeCount, 2);
       });
     });
+
+    group('TUI session blocks', () {
+      // @telos-scenario L1:...:block_provider:create-tui-session-block
+      test('createTuiSessionBlock creates a TUI session block', () {
+        // GIVEN: Empty state
+        expect(controller.state.blocks, isEmpty);
+
+        // WHEN: Creating a TUI session block
+        final blockId = controller.createTuiSessionBlock('vim file.txt');
+
+        // THEN: TUI session block is created with correct properties
+        expect(controller.state.blocks, hasLength(1));
+        final block = controller.state.blocks.first;
+        expect(block.id, blockId);
+        expect(block.command, 'vim file.txt');
+        expect(block.isTuiSession, true);
+        expect(block.output, ''); // TUI sessions don't capture output
+        expect(block.status, BlockStatus.running);
+        expect(block.isCollapsed, false);
+      });
+
+      // @telos-scenario L1:...:block_provider:create-tui-session-without-command
+      test('createTuiSessionBlock uses default command when null', () {
+        // WHEN: Creating a TUI session block without a triggering command
+        controller.createTuiSessionBlock(null);
+
+        // THEN: Default command is used
+        expect(controller.state.blocks.first.command, 'TUI Session');
+        expect(controller.state.blocks.first.isTuiSession, true);
+      });
+
+      // @telos-scenario L1:...:block_provider:create-tui-session-sets-active
+      test('createTuiSessionBlock sets block as active', () {
+        // WHEN: Creating a TUI session block
+        final blockId = controller.createTuiSessionBlock('htop');
+
+        // THEN: Block is set as active
+        expect(controller.state.activeBlockId, blockId);
+        expect(controller.hasActiveBlock, true);
+        expect(controller.activeTuiSession, isNotNull);
+        expect(controller.activeTuiSession?.command, 'htop');
+      });
+
+      // @telos-scenario L1:...:block_provider:complete-tui-session-block
+      test('completeTuiSessionBlock completes the TUI session', () async {
+        // GIVEN: An active TUI session block
+        controller.createTuiSessionBlock('vim');
+        expect(controller.activeTuiSession, isNotNull);
+
+        // WHEN: Completing the TUI session
+        await controller.completeTuiSessionBlock();
+
+        // THEN: Block is completed with success status
+        final block = controller.state.blocks.first;
+        expect(block.status, BlockStatus.success);
+        expect(block.completedAt, isNotNull);
+        expect(controller.activeTuiSession, isNull);
+        expect(controller.state.activeBlockId, isNull);
+      });
+
+      // @telos-scenario L1:...:block_provider:complete-tui-session-ignores-non-tui
+      test('completeTuiSessionBlock ignores non-TUI blocks', () async {
+        // GIVEN: A regular (non-TUI) block
+        controller.createBlock('ls');
+        final block = controller.state.blocks.first;
+        expect(block.isTuiSession, false);
+
+        // WHEN: Trying to complete as TUI session
+        await controller.completeTuiSessionBlock();
+
+        // THEN: Block is NOT completed (still running)
+        expect(controller.state.blocks.first.status, BlockStatus.running);
+        expect(controller.state.activeBlockId, isNotNull);
+      });
+
+      // @telos-scenario L1:...:block_provider:cancel-active-tui-session
+      test('cancelActiveTuiSession marks TUI session as cancelled', () async {
+        // GIVEN: An active TUI session block
+        controller.createTuiSessionBlock('less /var/log/syslog');
+        expect(controller.activeTuiSession, isNotNull);
+
+        // WHEN: Cancelling the TUI session (e.g., disconnect)
+        await controller.cancelActiveTuiSession();
+
+        // THEN: Block is completed with cancelled status
+        final block = controller.state.blocks.first;
+        expect(block.status, BlockStatus.cancelled);
+        expect(block.completedAt, isNotNull);
+        expect(controller.activeTuiSession, isNull);
+      });
+
+      // @telos-scenario L1:...:block_provider:cancel-tui-ignores-non-tui
+      test('cancelActiveTuiSession ignores non-TUI active blocks', () async {
+        // GIVEN: A regular (non-TUI) block
+        controller.createBlock('long-running-command');
+
+        // WHEN: Trying to cancel as TUI session
+        await controller.cancelActiveTuiSession();
+
+        // THEN: Block is NOT affected
+        expect(controller.state.blocks.first.status, BlockStatus.running);
+      });
+
+      // @telos-scenario L1:...:block_provider:active-tui-session-property
+      test('activeTuiSession returns null when no TUI session', () {
+        // GIVEN: No blocks
+        expect(controller.activeTuiSession, isNull);
+
+        // GIVEN: A regular block
+        controller.createBlock('ls');
+        expect(controller.activeTuiSession, isNull);
+      });
+
+      // @telos-scenario L1:...:block_provider:tui-auto-collapses-existing
+      test('createTuiSessionBlock auto-collapses existing blocks', () {
+        // GIVEN: An existing expanded block
+        controller.createBlock('first command');
+        expect(controller.state.blocks.first.isCollapsed, false);
+
+        // WHEN: Creating a TUI session block
+        controller.createTuiSessionBlock('vim');
+
+        // THEN: First block is auto-collapsed
+        expect(controller.state.blocks[0].isCollapsed, true);
+        expect(controller.state.blocks[1].isCollapsed, false);
+        expect(controller.state.blocks[1].isTuiSession, true);
+      });
+    });
   });
 
   group('BlockListState', () {

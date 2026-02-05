@@ -266,6 +266,86 @@ class BlockListController extends _$BlockListController {
     return state.blocks.where((b) => b.id == blockId).firstOrNull;
   }
 
+  /// Creates a TUI session block when entering TUI mode.
+  ///
+  /// TUI session blocks are different from regular blocks:
+  /// - They have `isTuiSession = true`
+  /// - They don't capture output (TUI apps use alternate screen buffer)
+  /// - They just record the command, duration, and exit status
+  ///
+  /// Returns the created block's ID.
+  String createTuiSessionBlock(String? triggeringCommand) {
+    final id = _uuid.v4();
+    final now = DateTime.now();
+
+    final block = TerminalBlock(
+      id: id,
+      sessionId: _sessionId,
+      command: triggeringCommand ?? 'TUI Session',
+      startedAt: now,
+      status: BlockStatus.running,
+      isCollapsed: false, // TUI session blocks start expanded
+      isTuiSession: true,
+      output: '', // TUI sessions don't capture output
+    );
+
+    // Auto-collapse existing blocks that weren't manually expanded
+    final updatedBlocks = state.blocks.map((existingBlock) {
+      if (!existingBlock.manuallyExpanded && !existingBlock.isCollapsed) {
+        return existingBlock.copyWith(isCollapsed: true);
+      }
+      return existingBlock;
+    }).toList();
+
+    state = state.copyWith(
+      blocks: [...updatedBlocks, block],
+      activeBlockId: id,
+    );
+
+    return id;
+  }
+
+  /// Completes a TUI session block when exiting TUI mode.
+  ///
+  /// Sets the completion time and status. For TUI sessions,
+  /// we typically don't have exit codes, so we default to success.
+  Future<void> completeTuiSessionBlock({
+    BlockStatus status = BlockStatus.success,
+    String? blockId,
+  }) async {
+    final targetId = blockId ?? state.activeBlockId;
+    if (targetId == null) return;
+
+    // Verify this is actually a TUI session block
+    final block = getBlock(targetId);
+    if (block == null || !block.isTuiSession) return;
+
+    await completeBlock(status: status, blockId: targetId);
+  }
+
+  /// Marks any active TUI session as cancelled.
+  ///
+  /// Call this on disconnect or app termination to properly close
+  /// any interrupted TUI sessions.
+  Future<void> cancelActiveTuiSession() async {
+    final active = state.activeBlock;
+    if (active == null || !active.isTuiSession) return;
+
+    await completeBlock(
+      status: BlockStatus.cancelled,
+      blockId: active.id,
+    );
+  }
+
+  /// Returns the active TUI session block if one exists.
+  TerminalBlock? get activeTuiSession {
+    final active = state.activeBlock;
+    if (active != null && active.isTuiSession) {
+      return active;
+    }
+    return null;
+  }
+
   /// Returns true if there's an active running block.
   bool get hasActiveBlock => state.hasActiveBlock;
 

@@ -33,4 +33,7 @@ class Blocks extends Table {
 
   /// Whether block is collapsed in UI.
   BoolColumn get isCollapsed => boolean().withDefault(const Constant(false))();
+
+  /// Whether this block represents a TUI session (vim, htop, etc.).
+  BoolColumn get isTuiSession => boolean().withDefault(const Constant(false))();
 }

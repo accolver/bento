@@ -79,6 +79,11 @@ class BentoDatabase extends _$BentoDatabase {
               await customStatement('''
                 CREATE INDEX IF NOT EXISTS idx_blocks_session_id ON blocks(session_id)
               ''');
+            case 4:
+              // v4: Add is_tui_session column to Blocks table for TUI mode support
+              await customStatement('''
+                ALTER TABLE blocks ADD COLUMN is_tui_session INTEGER NOT NULL DEFAULT 0
+              ''');
           }
         }
       },

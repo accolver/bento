@@ -21,6 +21,7 @@ void main() {
       DateTime? completedAt,
       bool isCollapsed = false,
       bool isTruncated = false,
+      bool isTuiSession = false,
     }) {
       return TerminalBlock(
         id: id,
@@ -33,6 +34,7 @@ void main() {
         completedAt: completedAt,
         isCollapsed: isCollapsed,
         isTruncated: isTruncated,
+        isTuiSession: isTuiSession,
       );
     }
 
@@ -55,6 +57,7 @@ void main() {
       expect(block.completedAt, isNull);
       expect(block.isCollapsed, false); // default
       expect(block.isTruncated, false); // default
+      expect(block.isTuiSession, false); // default
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/entities:terminal_block:block-immutability
@@ -84,6 +87,7 @@ void main() {
       expect(json['exitCode'], 0);
       expect(json['isCollapsed'], false);
       expect(json['isTruncated'], false);
+      expect(json['isTuiSession'], false);
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/entities:terminal_block:deserialize-from-json
@@ -99,6 +103,7 @@ void main() {
         'completedAt': '2026-02-04T12:00:01.000Z',
         'isCollapsed': true,
         'isTruncated': false,
+        'isTuiSession': true,
       };
 
       final block = TerminalBlock.fromJson(json);
@@ -110,6 +115,7 @@ void main() {
       expect(block.status, BlockStatus.success);
       expect(block.exitCode, 0);
       expect(block.isCollapsed, true);
+      expect(block.isTuiSession, true);
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/entities:terminal_block:equal-blocks
@@ -189,6 +195,75 @@ void main() {
       test('isCompleted returns true for cancelled status', () {
         final block = createTestBlock(status: BlockStatus.cancelled);
         expect(block.isCompleted, true);
+      });
+    });
+
+    group('TUI session blocks', () {
+      // @telos-scenario L1:function:lib/features/terminal/domain/entities:terminal_block:tui-session-flag
+      test('isTuiSession defaults to false', () {
+        final block = createTestBlock();
+        expect(block.isTuiSession, false);
+      });
+
+      test('can create TUI session block', () {
+        final block = createTestBlock(
+          command: 'vim file.txt',
+          isTuiSession: true,
+          output: '', // TUI sessions don't capture output
+        );
+
+        expect(block.isTuiSession, true);
+        expect(block.command, 'vim file.txt');
+        expect(block.output, '');
+      });
+
+      test('TUI session block serializes correctly', () {
+        final block = createTestBlock(
+          command: 'htop',
+          isTuiSession: true,
+        );
+
+        final json = block.toJson();
+        expect(json['isTuiSession'], true);
+        expect(json['command'], 'htop');
+      });
+
+      test('TUI session block deserializes correctly', () {
+        final json = {
+          'id': 'tui-block-1',
+          'sessionId': 'session-1',
+          'command': 'less /var/log/syslog',
+          'output': '',
+          'status': 'success',
+          'exitCode': 0,
+          'startedAt': '2026-02-04T12:00:00.000Z',
+          'completedAt': '2026-02-04T12:05:00.000Z',
+          'isCollapsed': false,
+          'isTruncated': false,
+          'isTuiSession': true,
+          'manuallyExpanded': false,
+        };
+
+        final block = TerminalBlock.fromJson(json);
+
+        expect(block.isTuiSession, true);
+        expect(block.command, 'less /var/log/syslog');
+        expect(block.executionDuration, const Duration(minutes: 5));
+      });
+
+      test('copyWith preserves isTuiSession', () {
+        final original = createTestBlock(isTuiSession: true);
+        final modified = original.copyWith(status: BlockStatus.success);
+
+        expect(modified.isTuiSession, true);
+      });
+
+      test('copyWith can change isTuiSession', () {
+        final original = createTestBlock(isTuiSession: false);
+        final modified = original.copyWith(isTuiSession: true);
+
+        expect(original.isTuiSession, false);
+        expect(modified.isTuiSession, true);
       });
     });
   });

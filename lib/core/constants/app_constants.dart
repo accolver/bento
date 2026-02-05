@@ -85,7 +85,8 @@ abstract class DatabaseConstants {
   /// v1: Initial schema with SavedConnections
   /// v2: Added CredentialMetadata table
   /// v3: Added Blocks table for semantic blocks
-  static const int schemaVersion = 3;
+  /// v4: Added is_tui_session column to Blocks table
+  static const int schemaVersion = 4;
 }
 
 /// Animation-related constants.

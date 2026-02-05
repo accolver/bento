@@ -35,6 +35,7 @@ class BlockRepository {
             startedAt: block.startedAt.millisecondsSinceEpoch,
             completedAt: Value(block.completedAt?.millisecondsSinceEpoch),
             isCollapsed: Value(block.isCollapsed),
+            isTuiSession: Value(block.isTuiSession),
           ),
         );
   }
@@ -57,6 +58,7 @@ class BlockRepository {
         exitCode: Value(block.exitCode),
         completedAt: Value(block.completedAt?.millisecondsSinceEpoch),
         isCollapsed: Value(block.isCollapsed),
+        isTuiSession: Value(block.isTuiSession),
       ),
     );
 
@@ -122,6 +124,7 @@ class BlockRepository {
           ? DateTime.fromMillisecondsSinceEpoch(row.completedAt!)
           : null,
       isCollapsed: row.isCollapsed,
+      isTuiSession: row.isTuiSession,
     );
   }
 

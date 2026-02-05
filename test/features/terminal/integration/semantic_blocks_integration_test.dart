@@ -47,7 +47,7 @@ void main() {
       final block = blockController.state.blocks.first;
       expect(block.command, 'ls -la');
       expect(block.status, BlockStatus.running);
-      expect(block.isCollapsed, true); // New blocks start collapsed by default
+      expect(block.isCollapsed, false); // New blocks start expanded
       expect(block.startedAt, isNotNull);
 
       // WHEN: Command output arrives
@@ -106,31 +106,31 @@ void main() {
           true);
     });
 
-    // @telos-scenario L2:...:semantic_blocks:blocks-start-collapsed
-    test('all blocks start collapsed by default', () async {
-      // Command 1
+    // @telos-scenario L2:...:semantic_blocks:new-block-expanded-old-collapsed
+    test('new blocks are expanded, older blocks are auto-collapsed', () async {
+      // Command 1 - starts expanded
       outputRouter.processOutput('user@host:~\$ first\n');
-      expect(blockController.state.blocks[0].isCollapsed, true); // Collapsed
+      expect(blockController.state.blocks[0].isCollapsed, false); // Expanded
 
       outputRouter.processOutput('output1\n');
       outputRouter.processOutput('user@host:~\$ \n');
 
-      // Command 2 - also starts collapsed
+      // Command 2 - old collapsed, new expanded
       outputRouter.processOutput('user@host:~\$ second\n');
       expect(
-          blockController.state.blocks[0].isCollapsed, true); // Still collapsed
+          blockController.state.blocks[0].isCollapsed, true); // Auto-collapsed
       expect(blockController.state.blocks[1].isCollapsed,
-          true); // New block also collapsed
+          false); // New block expanded
 
       outputRouter.processOutput('output2\n');
       outputRouter.processOutput('user@host:~\$ \n');
 
-      // Command 3 - also starts collapsed
+      // Command 3 - old blocks collapsed, new expanded
       outputRouter.processOutput('user@host:~\$ third\n');
       expect(blockController.state.blocks[0].isCollapsed, true);
       expect(blockController.state.blocks[1].isCollapsed, true);
-      expect(
-          blockController.state.blocks[2].isCollapsed, true); // All collapsed
+      expect(blockController.state.blocks[2].isCollapsed,
+          false); // Newest expanded
     });
 
     // @telos-scenario L2:...:semantic_blocks:same-command-multiple-times

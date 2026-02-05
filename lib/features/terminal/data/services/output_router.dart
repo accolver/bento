@@ -44,6 +44,10 @@ class OutputRouter {
   /// Callback for processed output (to write to terminal).
   void Function(String)? onProcessedOutput;
 
+  /// Callback when a command is submitted (Enter pressed).
+  /// Used to dismiss the keyboard after sending a command.
+  void Function()? onCommandSubmitted;
+
   /// Processes incoming output from SSH/PTY.
   ///
   /// Detects prompts, creates blocks for commands, and buffers output
@@ -157,6 +161,9 @@ class OutputRouter {
         _lastCommand = command;
         _blockController.createBlock(command);
         _atPrompt = false; // We're now running a command, not at prompt
+
+        // Notify that command was submitted (for keyboard dismissal)
+        onCommandSubmitted?.call();
       }
       return;
     }

@@ -35,7 +35,7 @@ void main() {
         expect(controller.state.blocks.first.command, 'ls -la');
         expect(controller.state.blocks.first.status, BlockStatus.running);
         expect(controller.state.blocks.first.isCollapsed,
-            true); // Collapsed by default
+            false); // New blocks start expanded
       });
 
       // @telos-scenario L1:...:block_provider:create-block-sets-active
@@ -49,18 +49,36 @@ void main() {
         expect(controller.activeBlock?.command, 'pwd');
       });
 
-      // @telos-scenario L1:...:block_provider:create-block-starts-collapsed
-      test('new blocks start collapsed by default', () {
-        // GIVEN: An existing block
+      // @telos-scenario L1:...:block_provider:create-block-auto-collapses-old
+      test('new blocks are expanded, older blocks are auto-collapsed', () {
+        // GIVEN: An existing block (starts expanded)
         controller.createBlock('first command');
-        expect(controller.state.blocks.first.isCollapsed, true);
+        expect(controller.state.blocks.first.isCollapsed, false);
 
         // WHEN: Creating a second block
         controller.createBlock('second command');
 
-        // THEN: Both blocks are collapsed
+        // THEN: First block is auto-collapsed, second is expanded
         expect(controller.state.blocks[0].isCollapsed, true);
-        expect(controller.state.blocks[1].isCollapsed, true);
+        expect(controller.state.blocks[1].isCollapsed, false);
+      });
+
+      // @telos-scenario L1:...:block_provider:create-block-keeps-manually-expanded
+      test('keeps manually expanded blocks expanded when new block created',
+          () {
+        // GIVEN: A block that was manually expanded
+        controller.createBlock('first command');
+        // Collapse it first, then expand (sets manuallyExpanded)
+        controller.toggleCollapsed(controller.state.blocks.first.id);
+        controller.toggleCollapsed(controller.state.blocks.first.id);
+        expect(controller.state.blocks.first.manuallyExpanded, true);
+
+        // WHEN: Creating a second block
+        controller.createBlock('second command');
+
+        // THEN: First block stays expanded (manuallyExpanded), second is also expanded
+        expect(controller.state.blocks[0].isCollapsed, false);
+        expect(controller.state.blocks[1].isCollapsed, false);
       });
 
       // @telos-scenario L1:...:block_provider:create-block-records-timestamp
@@ -213,27 +231,28 @@ void main() {
     group('toggleCollapsed', () {
       // @telos-scenario L1:...:block_provider:toggle-collapse
       test('toggles collapsed state', () {
-        // GIVEN: A collapsed block (default)
+        // GIVEN: An expanded block (new blocks start expanded)
         final blockId = controller.createBlock('cmd');
-        expect(controller.state.blocks.first.isCollapsed, true);
-
-        // WHEN: Toggling (expanding)
-        controller.toggleCollapsed(blockId);
-
-        // THEN: Block is expanded
         expect(controller.state.blocks.first.isCollapsed, false);
 
-        // WHEN: Toggling again
+        // WHEN: Toggling (collapsing)
         controller.toggleCollapsed(blockId);
 
         // THEN: Block is collapsed
         expect(controller.state.blocks.first.isCollapsed, true);
+
+        // WHEN: Toggling again
+        controller.toggleCollapsed(blockId);
+
+        // THEN: Block is expanded
+        expect(controller.state.blocks.first.isCollapsed, false);
       });
 
       // @telos-scenario L1:...:block_provider:toggle-sets-manually-expanded
-      test('sets manuallyExpanded flag when expanding', () {
-        // GIVEN: A collapsed block (default)
+      test('sets manuallyExpanded flag when expanding from collapsed', () {
+        // GIVEN: A collapsed block (collapse it first)
         final blockId = controller.createBlock('cmd');
+        controller.toggleCollapsed(blockId); // Collapse it
         expect(controller.state.blocks.first.isCollapsed, true);
         expect(controller.state.blocks.first.manuallyExpanded, false);
 
@@ -249,6 +268,7 @@ void main() {
       test('clears manuallyExpanded flag when collapsing', () {
         // GIVEN: A manually expanded block
         final blockId = controller.createBlock('cmd');
+        controller.toggleCollapsed(blockId); // Collapse
         controller.toggleCollapsed(blockId); // Expand (sets manuallyExpanded)
         expect(controller.state.blocks.first.manuallyExpanded, true);
 
@@ -282,12 +302,12 @@ void main() {
     group('collapseAll / expandAll', () {
       // @telos-scenario L1:...:block_provider:collapse-all
       test('collapses all blocks', () {
-        // GIVEN: Multiple blocks, some expanded
+        // GIVEN: Multiple blocks (new blocks start expanded, older auto-collapse)
         controller.createBlock('cmd1');
         controller.createBlock('cmd2');
-        // Expand both blocks
-        controller.toggleCollapsed(controller.state.blocks[0].id);
-        controller.toggleCollapsed(controller.state.blocks[1].id);
+        // cmd1 is collapsed (auto), cmd2 is expanded (newest)
+        expect(controller.state.blocks[0].isCollapsed, true);
+        expect(controller.state.blocks[1].isCollapsed, false);
 
         // WHEN: Collapsing all
         controller.collapseAll();
@@ -298,9 +318,10 @@ void main() {
 
       // @telos-scenario L1:...:block_provider:expand-all
       test('expands all blocks', () {
-        // GIVEN: Multiple collapsed blocks (default state)
+        // GIVEN: Multiple blocks, collapse all first
         controller.createBlock('cmd1');
         controller.createBlock('cmd2');
+        controller.collapseAll();
         expect(controller.state.blocks.every((b) => b.isCollapsed), true);
 
         // WHEN: Expanding all

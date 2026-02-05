@@ -112,7 +112,8 @@ class BlockListController extends _$BlockListController {
 
   /// Creates a new block for a command.
   ///
-  /// New blocks start collapsed by default.
+  /// New blocks start expanded. Existing blocks are auto-collapsed
+  /// unless they were manually expanded by the user.
   ///
   /// Returns the created block's ID.
   String createBlock(String command) {
@@ -130,11 +131,19 @@ class BlockListController extends _$BlockListController {
       command: command,
       startedAt: now,
       status: BlockStatus.running,
-      isCollapsed: true, // New blocks start collapsed by default
+      isCollapsed: false, // New blocks start expanded
     );
 
+    // Auto-collapse existing blocks that weren't manually expanded
+    final updatedBlocks = state.blocks.map((existingBlock) {
+      if (!existingBlock.manuallyExpanded && !existingBlock.isCollapsed) {
+        return existingBlock.copyWith(isCollapsed: true);
+      }
+      return existingBlock;
+    }).toList();
+
     state = state.copyWith(
-      blocks: [...state.blocks, block],
+      blocks: [...updatedBlocks, block],
       activeBlockId: id,
     );
 

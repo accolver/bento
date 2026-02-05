@@ -97,4 +97,12 @@ class OutputRouterController extends _$OutputRouterController {
       print('[OutputRouterController] Callback set on router');
     }
   }
+
+  /// Sets a callback for when a command is submitted.
+  ///
+  /// This is called when the user presses Enter after typing a command.
+  /// Useful for dismissing the keyboard.
+  void setCommandSubmittedCallback(void Function() callback) {
+    _router?.onCommandSubmitted = callback;
+  }
 }

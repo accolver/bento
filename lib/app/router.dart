@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../features/home/presentation/screens/home_screen.dart';
+import '../features/terminal/presentation/screens/ssh_connect_screen.dart';
 import '../features/terminal/presentation/screens/terminal_screen.dart';
 
 part 'router.g.dart';
@@ -16,6 +18,7 @@ abstract class Routes {
   static const String connections = '/connections';
   static const String settings = '/settings';
   static const String terminal = '/terminal/:id';
+  static const String sshConnect = '/ssh-connect';
 
   /// Generate terminal route with connection ID.
   static String terminalPath(String connectionId) => '/terminal/$connectionId';
@@ -31,7 +34,7 @@ GoRouter router(RouterRef ref) {
       GoRoute(
         path: Routes.home,
         name: 'home',
-        builder: (context, state) => const _PlaceholderScreen(title: 'Home'),
+        builder: (context, state) => const HomeScreen(),
       ),
       GoRoute(
         path: Routes.connections,
@@ -52,6 +55,11 @@ GoRouter router(RouterRef ref) {
           final id = state.pathParameters['id'] ?? '';
           return TerminalScreen(title: 'Terminal: $id');
         },
+      ),
+      GoRoute(
+        path: Routes.sshConnect,
+        name: 'ssh-connect',
+        builder: (context, state) => const SSHConnectScreen(),
       ),
     ],
     errorBuilder: (context, state) => _ErrorScreen(error: state.error),
@@ -88,9 +96,15 @@ class _PlaceholderScreen extends StatelessWidget {
             ),
             const SizedBox(height: 32),
             FilledButton.icon(
+              onPressed: () => context.go(Routes.sshConnect),
+              icon: const Icon(Icons.login),
+              label: const Text('SSH Connect'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
               onPressed: () => context.go(Routes.terminalPath('demo')),
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Open Terminal'),
+              label: const Text('Local Terminal Demo'),
             ),
           ],
         ),

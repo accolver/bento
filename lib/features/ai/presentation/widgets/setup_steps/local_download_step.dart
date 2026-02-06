@@ -32,6 +32,25 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
   @override
   void initState() {
     super.initState();
+    _checkAndStartDownload();
+  }
+
+  /// Check if model is already downloaded, if so skip to complete.
+  Future<void> _checkAndStartDownload() async {
+    final downloadService = ref.read(modelDownloadServiceProvider);
+
+    // Check if model is already downloaded
+    final isDownloaded =
+        await downloadService.isModelDownloaded(widget.model.id);
+    if (isDownloaded) {
+      // Model already exists, skip download
+      if (!mounted) return;
+      final modelPath = await downloadService.getModelPath(widget.model.id);
+      widget.onComplete(modelPath);
+      return;
+    }
+
+    // Model not downloaded, start download
     _startDownload();
   }
 
@@ -39,6 +58,7 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
     setState(() {
       _isDownloading = true;
       _error = null;
+      _progress = null;
     });
 
     final downloadService = ref.read(modelDownloadServiceProvider);
@@ -52,17 +72,51 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
         });
       }
 
-      // Download complete
+      // Download complete - check if we actually finished
       if (!mounted) return;
-      final modelPath = await downloadService.getModelPath(widget.model.id);
-      widget.onComplete(modelPath);
+
+      // Verify the file exists before calling onComplete
+      final isDownloaded =
+          await downloadService.isModelDownloaded(widget.model.id);
+      if (isDownloaded) {
+        final modelPath = await downloadService.getModelPath(widget.model.id);
+        widget.onComplete(modelPath);
+      } else {
+        setState(() {
+          _error = 'Download completed but file not found';
+          _isDownloading = false;
+        });
+      }
     } on ModelDownloadException catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.message;
         _isDownloading = false;
       });
+    } catch (e) {
+      // Catch any unexpected errors (including stream errors)
+      if (!mounted) return;
+      setState(() {
+        _error = _formatError(e);
+        _isDownloading = false;
+      });
     }
+  }
+
+  String _formatError(dynamic error) {
+    if (error is ModelDownloadException) {
+      return error.message;
+    }
+    final errorStr = error.toString();
+    // Make error messages more user-friendly
+    if (errorStr.contains('SocketException') ||
+        errorStr.contains('Connection refused')) {
+      return 'Unable to connect to server. Please check your internet connection.';
+    }
+    if (errorStr.contains('Connection timed out')) {
+      return 'Connection timed out. Please try again.';
+    }
+    return 'Download failed: $errorStr';
   }
 
   void _cancelDownload() {

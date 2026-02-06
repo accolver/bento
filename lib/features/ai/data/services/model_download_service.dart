@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -57,9 +58,25 @@ class DownloadProgress {
 class ModelDownloadService {
   ModelDownloadService({
     Dio? dio,
-  }) : _dio = dio ?? Dio();
+  }) : _dio = dio ?? _createDefaultDio();
 
   final Dio _dio;
+
+  /// Creates a default Dio instance with proper configuration.
+  static Dio _createDefaultDio() {
+    return Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(minutes: 30), // Large files need time
+        followRedirects: true,
+        maxRedirects: 5,
+        headers: {
+          'User-Agent': 'Bento/1.0 (Flutter)',
+        },
+      ),
+    );
+  }
+
   CancelToken? _cancelToken;
   bool _isDownloading = false;
 
@@ -72,25 +89,46 @@ class ModelDownloadService {
   /// Throws [ModelDownloadException] on failure.
   ///
   /// Returns the local file path where the model was saved.
-  Stream<DownloadProgress> downloadModel(LocalAiModel model) async* {
+  Stream<DownloadProgress> downloadModel(LocalAiModel model) {
+    // Use a StreamController to manage the async generator properly
+    late StreamController<DownloadProgress> controller;
+
+    controller = StreamController<DownloadProgress>(
+      onListen: () => _startDownload(model, controller),
+      onCancel: () {
+        cancelDownload();
+      },
+    );
+
+    return controller.stream;
+  }
+
+  Future<void> _startDownload(
+    LocalAiModel model,
+    StreamController<DownloadProgress> controller,
+  ) async {
     if (_isDownloading) {
-      throw const ModelDownloadException(
+      controller.addError(const ModelDownloadException(
         message: 'A download is already in progress',
         code: ModelDownloadErrorCode.alreadyDownloading,
-      );
+      ));
+      await controller.close();
+      return;
     }
 
     _isDownloading = true;
     _cancelToken = CancelToken();
 
-    final localPath = await _getModelPath(model.id);
-
-    // Create a stream controller for progress updates
-    final controller = StreamController<DownloadProgress>();
+    String? localPath;
 
     try {
-      // Start download in background
-      final downloadFuture = _dio.download(
+      localPath = await _getModelPath(model.id);
+
+      debugPrint(
+          '[ModelDownload] Starting download from: ${model.downloadUrl}');
+      debugPrint('[ModelDownload] Saving to: $localPath');
+
+      await _dio.download(
         model.downloadUrl,
         localPath,
         cancelToken: _cancelToken,
@@ -107,49 +145,110 @@ class ModelDownloadService {
         },
       );
 
-      // Forward progress events from controller
-      await for (final progress in controller.stream) {
-        yield progress;
-
-        // Check if download is complete
-        if (progress.progress >= 1.0) {
-          break;
-        }
-      }
-
-      // Wait for download to complete
-      await downloadFuture;
+      debugPrint('[ModelDownload] Download complete!');
 
       // Final progress update
-      yield DownloadProgress(
-        receivedBytes: model.sizeBytes,
-        totalBytes: model.sizeBytes,
-      );
+      if (!controller.isClosed) {
+        controller.add(DownloadProgress(
+          receivedBytes: model.sizeBytes,
+          totalBytes: model.sizeBytes,
+        ));
+      }
     } on DioException catch (e) {
-      if (e.type == DioExceptionType.cancel) {
-        // Clean up partial file on cancel
-        await _deleteFile(localPath);
-        throw const ModelDownloadException(
-          message: 'Download cancelled',
-          code: ModelDownloadErrorCode.cancelled,
-        );
-      } else if (e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.connectionTimeout) {
-        throw ModelDownloadException(
-          message: 'Network error: ${e.message}',
+      debugPrint('[ModelDownload] DioException: ${e.type} - ${e.message}');
+      debugPrint('[ModelDownload] Error details: ${e.error}');
+      final exception = _handleDioException(e, localPath);
+      if (!controller.isClosed) {
+        controller.addError(exception);
+      }
+    } catch (e, stackTrace) {
+      // Catch any other unexpected errors (SocketException, etc.)
+      debugPrint('[ModelDownload] Unexpected error: $e');
+      debugPrint('[ModelDownload] Stack trace: $stackTrace');
+      if (!controller.isClosed) {
+        controller.addError(ModelDownloadException(
+          message: 'Download failed: $e',
+          code: ModelDownloadErrorCode.downloadFailed,
+        ));
+      }
+    } finally {
+      _isDownloading = false;
+      _cancelToken = null;
+      await controller.close();
+    }
+  }
+
+  /// Converts DioException to ModelDownloadException.
+  ModelDownloadException _handleDioException(
+      DioException e, String? localPath) {
+    // Handle cancellation
+    if (e.type == DioExceptionType.cancel) {
+      // Clean up partial file on cancel (fire and forget)
+      if (localPath != null) {
+        _deleteFile(localPath);
+      }
+      return const ModelDownloadException(
+        message: 'Download cancelled',
+        code: ModelDownloadErrorCode.cancelled,
+      );
+    }
+
+    // Handle connection errors (including SocketException wrapped in unknown)
+    if (e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.unknown) {
+      // Check if it's a SocketException
+      final error = e.error;
+      if (error is SocketException) {
+        // Check for specific error patterns
+        final errorMsg = error.message.toLowerCase();
+        if (errorMsg.contains('connection refused')) {
+          return const ModelDownloadException(
+            message: 'Unable to connect to model server. The server may be '
+                'temporarily unavailable or your network may be blocking the '
+                'connection. Try using Cloud AI instead.',
+            code: ModelDownloadErrorCode.networkError,
+          );
+        }
+        return ModelDownloadException(
+          message: 'Connection failed: ${error.message}',
           code: ModelDownloadErrorCode.networkError,
         );
-      } else {
-        throw ModelDownloadException(
-          message: 'Download failed: ${e.message}',
+      }
+      return ModelDownloadException(
+        message: 'Network error: ${e.message ?? 'Connection failed'}',
+        code: ModelDownloadErrorCode.networkError,
+      );
+    }
+
+    // Handle HTTP errors
+    if (e.type == DioExceptionType.badResponse) {
+      final statusCode = e.response?.statusCode;
+      if (statusCode == 403) {
+        return const ModelDownloadException(
+          message: 'Access denied by model server. The model may no longer be '
+              'available for download. Try using Cloud AI instead.',
           code: ModelDownloadErrorCode.downloadFailed,
         );
       }
-    } finally {
-      await controller.close();
-      _isDownloading = false;
-      _cancelToken = null;
+      if (statusCode == 404) {
+        return const ModelDownloadException(
+          message: 'Model file not found. The model may have been moved or '
+              'removed. Try using Cloud AI instead.',
+          code: ModelDownloadErrorCode.downloadFailed,
+        );
+      }
+      return ModelDownloadException(
+        message: 'Server error ($statusCode). Try again later or use Cloud AI.',
+        code: ModelDownloadErrorCode.downloadFailed,
+      );
     }
+
+    // Handle other errors
+    return ModelDownloadException(
+      message: 'Download failed: ${e.message ?? 'Unknown error'}',
+      code: ModelDownloadErrorCode.downloadFailed,
+    );
   }
 
   /// Cancels the current download.

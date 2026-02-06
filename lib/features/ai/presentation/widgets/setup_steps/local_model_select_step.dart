@@ -1,17 +1,53 @@
 // @telos L2:contract:lib/features/ai/presentation/widgets/setup_steps:local_model_select_step
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/entities/local_ai_model.dart';
+import '../../providers/ai_providers.dart';
 
 /// Step for selecting which local model to download.
-class LocalModelSelectStep extends StatelessWidget {
+class LocalModelSelectStep extends ConsumerStatefulWidget {
   const LocalModelSelectStep({
     super.key,
     required this.onModelSelected,
   });
 
   final void Function(LocalAiModel model) onModelSelected;
+
+  @override
+  ConsumerState<LocalModelSelectStep> createState() =>
+      _LocalModelSelectStepState();
+}
+
+class _LocalModelSelectStepState extends ConsumerState<LocalModelSelectStep> {
+  final Map<String, bool> _downloadedModels = {};
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDownloadedModels();
+  }
+
+  Future<void> _checkDownloadedModels() async {
+    final downloadService = ref.read(modelDownloadServiceProvider);
+
+    for (final model in availableLocalModels) {
+      final isDownloaded = await downloadService.isModelDownloaded(model.id);
+      if (mounted) {
+        setState(() {
+          _downloadedModels[model.id] = isDownloaded;
+        });
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,9 +79,12 @@ class LocalModelSelectStep extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final model = availableLocalModels[index];
+                final isDownloaded = _downloadedModels[model.id] ?? false;
                 return _ModelCard(
                   model: model,
-                  onTap: () => onModelSelected(model),
+                  isDownloaded: isDownloaded,
+                  isLoading: _isLoading,
+                  onTap: () => widget.onModelSelected(model),
                 );
               },
             ),
@@ -60,10 +99,14 @@ class _ModelCard extends StatelessWidget {
   const _ModelCard({
     required this.model,
     required this.onTap,
+    required this.isDownloaded,
+    required this.isLoading,
   });
 
   final LocalAiModel model;
   final VoidCallback onTap;
+  final bool isDownloaded;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -134,6 +177,37 @@ class _ModelCard extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  // Downloaded badge
+                  if (isDownloaded)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 14,
+                            color: theme.colorScheme.onTertiaryContainer,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Ready',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onTertiaryContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (model.isRecommended)
                     Container(
                       padding: const EdgeInsets.symmetric(

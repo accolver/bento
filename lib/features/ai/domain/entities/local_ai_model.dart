@@ -7,6 +7,8 @@ part 'local_ai_model.freezed.dart';
 /// A local AI model that can be downloaded and run on-device.
 ///
 /// Models are GGUF format files that work with flutter_llama.
+/// Downloads are sourced from Ollama's registry which provides reliable
+/// CDN-backed access to GGUF models.
 @freezed
 class LocalAiModel with _$LocalAiModel {
   const factory LocalAiModel({
@@ -19,11 +21,14 @@ class LocalAiModel with _$LocalAiModel {
     /// Human-readable description of the model's strengths.
     required String description,
 
-    /// HuggingFace repository containing the model.
-    required String huggingFaceRepo,
+    /// Ollama library name (e.g., "tinyllama", "phi3", "qwen2").
+    required String ollamaLibrary,
 
-    /// Filename within the repository.
-    required String huggingFaceFile,
+    /// Ollama model tag (e.g., "latest", "mini", "0.5b").
+    required String ollamaTag,
+
+    /// SHA256 digest of the model blob in Ollama registry.
+    required String ollamaBlobDigest,
 
     /// Size in bytes.
     required int sizeBytes,
@@ -48,24 +53,29 @@ class LocalAiModel with _$LocalAiModel {
     }
   }
 
-  /// Full download URL from HuggingFace.
+  /// Full download URL from Ollama's registry.
+  ///
+  /// Uses Ollama's Docker-compatible registry which provides reliable
+  /// CDN-backed (Cloudflare R2) access to GGUF model blobs.
   String get downloadUrl =>
-      'https://huggingface.co/$huggingFaceRepo/resolve/main/$huggingFaceFile';
+      'https://registry.ollama.ai/v2/library/$ollamaLibrary/blobs/$ollamaBlobDigest';
 }
 
 /// Available models for local AI inference.
 ///
-/// These are curated GGUF models that work well with flutter_llama
-/// and are appropriate for mobile/desktop devices.
+/// These are curated GGUF models from Ollama's registry that work well
+/// with flutter_llama and are appropriate for mobile/desktop devices.
 const List<LocalAiModel> availableLocalModels = [
   // TinyLlama - smallest, fastest
   LocalAiModel(
     id: 'tinyllama',
     name: 'TinyLlama',
     description: 'Fastest option, works on any device',
-    huggingFaceRepo: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF',
-    huggingFaceFile: 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
-    sizeBytes: 669 * 1024 * 1024, // ~669 MB
+    ollamaLibrary: 'tinyllama',
+    ollamaTag: 'latest',
+    ollamaBlobDigest:
+        'sha256:2af3b81862c6be03c769683af18efdadb2c33f60ff32ab6f83e42c043d6c7816',
+    sizeBytes: 637699456, // ~608 MB
     qualityRating: 3,
   ),
 
@@ -74,21 +84,25 @@ const List<LocalAiModel> availableLocalModels = [
     id: 'phi3-mini',
     name: 'Phi-3 Mini',
     description: 'Best balance of speed and quality',
-    huggingFaceRepo: 'microsoft/Phi-3-mini-4k-instruct-gguf',
-    huggingFaceFile: 'Phi-3-mini-4k-instruct-q4.gguf',
-    sizeBytes: 2 * 1024 * 1024 * 1024, // ~2 GB
+    ollamaLibrary: 'phi3',
+    ollamaTag: 'mini',
+    ollamaBlobDigest:
+        'sha256:633fc5be925f9a484b61d6f9b9a78021eeb462100bd557309f01ba84cac26adf',
+    sizeBytes: 2176177120, // ~2.0 GB
     qualityRating: 5,
     isRecommended: true,
   ),
 
-  // Gemma 2B - good for multiple languages
+  // Gemma 2 2B - good for multiple languages
   LocalAiModel(
-    id: 'gemma-2b',
-    name: 'Gemma 2B',
+    id: 'gemma2-2b',
+    name: 'Gemma 2 2B',
     description: 'Good for multiple languages',
-    huggingFaceRepo: 'google/gemma-2b-it-GGUF',
-    huggingFaceFile: 'gemma-2b-it-q4_k_m.gguf',
-    sizeBytes: 1503238553, // ~1.4 GB
+    ollamaLibrary: 'gemma2',
+    ollamaTag: '2b',
+    ollamaBlobDigest:
+        'sha256:7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b',
+    sizeBytes: 1629509152, // ~1.5 GB
     qualityRating: 4,
   ),
 
@@ -97,9 +111,11 @@ const List<LocalAiModel> availableLocalModels = [
     id: 'qwen2-0.5b',
     name: 'Qwen2 0.5B',
     description: 'Ultra-compact, very fast',
-    huggingFaceRepo: 'Qwen/Qwen2-0.5B-Instruct-GGUF',
-    huggingFaceFile: 'qwen2-0_5b-instruct-q4_k_m.gguf',
-    sizeBytes: 400 * 1024 * 1024, // ~400 MB
+    ollamaLibrary: 'qwen2',
+    ollamaTag: '0.5b',
+    ollamaBlobDigest:
+        'sha256:8de95da68dc485c0889c205384c24642f83ca18d089559c977ffc6a3972a71a8',
+    sizeBytes: 352151968, // ~336 MB
     qualityRating: 3,
   ),
 ];

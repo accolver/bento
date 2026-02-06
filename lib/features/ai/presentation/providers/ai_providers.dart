@@ -3,14 +3,33 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../data/repositories/ai_config_repository.dart';
 import '../../data/services/mock_ai_service.dart';
+import '../../data/services/model_download_service.dart';
 import '../../domain/entities/ai_config.dart';
 import '../../domain/entities/ai_privacy_mode.dart';
 import '../../domain/entities/ai_suggestion.dart';
+// local_ai_model imported indirectly through model_download_service
 import '../../domain/services/ai_service.dart';
 import '../../domain/services/ai_service_factory.dart';
 
 part 'ai_providers.g.dart';
+
+// =============================================================================
+// Repository & Service Providers
+// =============================================================================
+
+/// Provider for the AI configuration repository.
+@riverpod
+AiConfigRepository aiConfigRepository(Ref ref) {
+  return AiConfigRepository();
+}
+
+/// Provider for the model download service.
+@riverpod
+ModelDownloadService modelDownloadService(Ref ref) {
+  return ModelDownloadService();
+}
 
 // =============================================================================
 // Configuration Providers
@@ -18,46 +37,76 @@ part 'ai_providers.g.dart';
 
 /// Provider for the AI configuration.
 ///
-/// Manages the user's AI preferences. In the future, this will persist
-/// to storage. For now, defaults to unconfigured (mock service).
+/// Manages the user's AI preferences with persistence to storage.
+/// Loads from repository on build, saves on updates.
 @riverpod
 class AiConfigState extends _$AiConfigState {
-  @override
-  AiConfig build() => AiConfig.unconfigured();
+  AiConfigRepository get _repo => ref.read(aiConfigRepositoryProvider);
 
-  /// Update the AI configuration.
-  void update(AiConfig config) => state = config;
+  @override
+  Future<AiConfig> build() async {
+    // Load persisted config on startup
+    return _repo.loadConfig();
+  }
+
+  /// Save a new AI configuration.
+  Future<void> saveConfig(AiConfig config) async {
+    await _repo.saveConfig(config);
+    state = AsyncData(config);
+  }
 
   /// Reset to unconfigured state.
-  void reset() => state = AiConfig.unconfigured();
+  Future<void> reset() async {
+    await _repo.clearConfig();
+    state = AsyncData(AiConfig.unconfigured());
+  }
 
   /// Set to local AI mode.
-  void setLocal({required String modelId, required String modelPath}) {
-    state = state.copyWith(
+  Future<void> setLocal({
+    required String modelId,
+    required String modelPath,
+  }) async {
+    final current = state.valueOrNull ?? AiConfig.unconfigured();
+    final config = current.copyWith(
       mode: AiMode.local,
       localModelId: modelId,
       localModelPath: modelPath,
       configuredAt: DateTime.now(),
     );
+    await saveConfig(config);
   }
 
   /// Set to cloud AI mode.
-  void setCloud(CloudAiProvider provider) {
-    state = state.copyWith(
+  Future<void> setCloud(CloudAiProvider provider) async {
+    final current = state.valueOrNull ?? AiConfig.unconfigured();
+    final config = current.copyWith(
       mode: AiMode.cloud,
       cloudProvider: provider,
       configuredAt: DateTime.now(),
     );
+    await saveConfig(config);
   }
 
   /// Set to remote AI mode.
-  void setRemote({String? modelName}) {
-    state = state.copyWith(
+  Future<void> setRemote({String? modelName}) async {
+    final current = state.valueOrNull ?? AiConfig.unconfigured();
+    final config = current.copyWith(
       mode: AiMode.remote,
       remoteAutoDetect: true,
       remoteModelName: modelName,
       configuredAt: DateTime.now(),
     );
+    await saveConfig(config);
+  }
+
+  /// Save an API key for cloud AI.
+  Future<void> saveApiKey(String apiKey) async {
+    await _repo.saveApiKey(apiKey);
+  }
+
+  /// Get the stored API key.
+  Future<String?> getApiKey() async {
+    return _repo.getApiKey();
   }
 }
 
@@ -83,8 +132,11 @@ AiServiceFactory aiServiceFactory(Ref ref) {
 class AiServiceController extends _$AiServiceController {
   @override
   Future<AiService> build() async {
-    final config = ref.watch(aiConfigStateProvider);
+    final configAsync = ref.watch(aiConfigStateProvider);
     final factory = ref.watch(aiServiceFactoryProvider);
+
+    // Wait for config to load, use unconfigured as fallback
+    final config = configAsync.valueOrNull ?? AiConfig.unconfigured();
 
     // Create the service based on config
     // Note: For now, we don't have SSH session or secure storage wired up,
@@ -92,9 +144,7 @@ class AiServiceController extends _$AiServiceController {
     final service = await factory.createService(config);
 
     // Dispose service when provider is disposed
-    ref.onDispose(() {
-      service.dispose();
-    });
+    ref.onDispose(service.dispose);
 
     return service;
   }
@@ -233,11 +283,10 @@ class AiStreamState extends _$AiStreamState {
             );
           case AiStreamError():
             state = (isStreaming: false, tokens: '', suggestion: null);
-            // Could expose error state if needed
-            break;
+          // Could expose error state if needed
         }
       }
-    } catch (e) {
+    } on Exception {
       state = (isStreaming: false, tokens: '', suggestion: null);
     }
   }

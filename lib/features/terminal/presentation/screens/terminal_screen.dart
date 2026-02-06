@@ -7,7 +7,9 @@ import 'package:xterm/xterm.dart';
 
 import '../../../../app/router.dart';
 import '../../../../core/constants/terminal_colors.dart';
+import '../../../ai/domain/entities/ai_config.dart';
 import '../../../ai/presentation/providers/ai_providers.dart';
+import '../../../ai/presentation/screens/ai_setup_wizard.dart';
 import '../../../ai/presentation/widgets/ai_fab.dart';
 import '../../../ai/presentation/widgets/ai_ghostwriter_panel.dart';
 import '../../domain/entities/terminal_config.dart';
@@ -194,7 +196,32 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   /// Shows the AI Ghostwriter bottom sheet panel.
+  ///
+  /// If AI is not configured, shows the setup wizard first.
   void _showAiPanel(BuildContext context) {
+    // Check if AI is configured
+    final configAsync = ref.read(aiConfigStateProvider);
+    final config = configAsync.valueOrNull ?? AiConfig.unconfigured();
+
+    if (!config.isConfigured) {
+      // Show setup wizard first
+      AiSetupWizard.show(context).then((_) {
+        // After wizard closes, check if now configured
+        final newConfigAsync = ref.read(aiConfigStateProvider);
+        final newConfig = newConfigAsync.valueOrNull ?? AiConfig.unconfigured();
+        if (newConfig.isConfigured && mounted) {
+          // Now show the AI panel
+          _showAiPanelDirect(context);
+        }
+      });
+      return;
+    }
+
+    _showAiPanelDirect(context);
+  }
+
+  /// Shows the AI panel directly (assumes AI is configured).
+  void _showAiPanelDirect(BuildContext context) {
     // Clear any previous input
     ref.read(aiInputProvider.notifier).clear();
 

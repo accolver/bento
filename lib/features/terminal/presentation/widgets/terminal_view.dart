@@ -1,5 +1,8 @@
 // @telos L1:function:lib/features/terminal/presentation/widgets:terminal_view
 
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +11,12 @@ import 'package:xterm/xterm.dart';
 import '../../domain/entities/terminal_config.dart';
 import '../providers/terminal_config_provider.dart';
 import '../providers/terminal_provider.dart';
+
+/// Returns true if running on a mobile platform (Android or iOS).
+bool get _isMobilePlatform {
+  if (kIsWeb) return false;
+  return Platform.isAndroid || Platform.isIOS;
+}
 
 /// A widget that displays a terminal emulator.
 ///
@@ -68,6 +77,13 @@ class _BentoTerminalViewState extends ConsumerState<BentoTerminalView> {
           ),
           autofocus: widget.autofocus,
           onSecondaryTapDown: _handleSecondaryTap,
+          // Enable delete/backspace detection on mobile platforms.
+          // Mobile soft keyboards don't always emit hardware delete events,
+          // so xterm needs this workaround to detect backspace properly.
+          deleteDetection: _isMobilePlatform,
+          // Use text keyboard type for better terminal compatibility.
+          // The default emailAddress type can cause issues with some characters.
+          keyboardType: TextInputType.text,
         );
       },
     );

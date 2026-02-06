@@ -55,7 +55,7 @@ class AiCommandSuggestion extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Semantics(
-      label: 'Loading AI suggestion',
+      label: 'Generating AI suggestion',
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -65,31 +65,60 @@ class AiCommandSuggestion extends StatelessWidget {
             color: theme.aiPrimaryColor.withValues(alpha: 0.3),
           ),
         ),
-        child: _ShimmerEffect(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Command placeholder
-              Container(
-                height: 20,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Loading header with spinner
+            Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.aiPrimaryColor,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              // Explanation placeholder
-              Container(
-                height: 14,
-                width: 200,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
+                const SizedBox(width: 12),
+                Text(
+                  'Generating command...',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: theme.aiPrimaryColor,
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Shimmer placeholders
+            _ShimmerEffect(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Command placeholder
+                  Container(
+                    height: 20,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Explanation placeholder
+                  Container(
+                    height: 14,
+                    width: 200,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,9 +1,12 @@
 // @telos L1:function:lib/features/ai/presentation/providers:ai_providers
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../data/repositories/ai_config_repository.dart';
+import '../../data/services/local_ai_service.dart';
 import '../../data/services/mock_ai_service.dart';
 import '../../data/services/model_download_service.dart';
 import '../../domain/entities/ai_config.dart';
@@ -14,6 +17,11 @@ import '../../domain/services/ai_service.dart';
 import '../../domain/services/ai_service_factory.dart';
 
 part 'ai_providers.g.dart';
+
+/// Debounce duration for AI suggestion generation.
+///
+/// This prevents rapid-fire API calls while the user is typing.
+const _suggestionDebounceDuration = Duration(milliseconds: 500);
 
 // =============================================================================
 // Repository & Service Providers
@@ -39,7 +47,10 @@ ModelDownloadService modelDownloadService(Ref ref) {
 ///
 /// Manages the user's AI preferences with persistence to storage.
 /// Loads from repository on build, saves on updates.
-@riverpod
+///
+/// This provider is kept alive to prevent re-loading config on every access.
+/// The AI configuration is critical state that should persist for the app's lifetime.
+@Riverpod(keepAlive: true)
 class AiConfigState extends _$AiConfigState {
   AiConfigRepository get _repo => ref.read(aiConfigRepositoryProvider);
 
@@ -180,13 +191,24 @@ class AiPanelVisible extends _$AiPanelVisible {
 /// Provider for the natural language input text.
 ///
 /// Stores the user's input in the AI Ghostwriter panel.
+/// Automatically triggers debounced suggestion generation on updates.
 @riverpod
 class AiInput extends _$AiInput {
   @override
   String build() => '';
 
-  void update(String value) => state = value;
-  void clear() => state = '';
+  /// Update the input value and trigger debounced suggestion generation.
+  void update(String value) {
+    state = value;
+    // Trigger debounced generation
+    ref.read(aiSuggestionControllerProvider.notifier).onInputChanged(value);
+  }
+
+  void clear() {
+    state = '';
+    // Clear suggestions too
+    ref.read(aiSuggestionControllerProvider.notifier).onInputChanged('');
+  }
 }
 
 /// Provider for the current AI privacy mode.
@@ -217,27 +239,92 @@ class AiPrivacyModeState extends _$AiPrivacyModeState {
 // Suggestion Provider
 // =============================================================================
 
-/// Provider for AI command suggestions.
+/// Provider for AI command suggestions with debouncing.
 ///
 /// Watches the input provider and generates suggestions when input changes.
-/// Uses the current AI service for generation.
+/// Uses debouncing to prevent rapid-fire generation requests while typing.
+/// Automatically cancels in-flight requests when a new request is made.
 @riverpod
 class AiSuggestionController extends _$AiSuggestionController {
+  Timer? _debounceTimer;
+  String? _lastGeneratedInput;
+
   @override
   Future<AiSuggestion?> build() async {
-    // Watch the input and regenerate when it changes
+    // Clean up timer when provider is disposed
+    ref.onDispose(() {
+      _debounceTimer?.cancel();
+    });
+
+    // Watch the input
     final input = ref.watch(aiInputProvider);
 
     // Don't generate for empty or very short input
     if (input.trim().length < 3) {
+      _lastGeneratedInput = null;
       return null;
     }
 
-    // Get the current AI service
-    final service = ref.watch(aiServiceProvider);
+    // If input hasn't changed from last generation, return current state
+    if (input == _lastGeneratedInput && state.hasValue) {
+      return state.value;
+    }
 
-    // Generate suggestion
-    return service.generateCommand(input);
+    // Return current value while debouncing
+    // The actual generation will be triggered by _debouncedGenerate
+    return state.valueOrNull;
+  }
+
+  /// Trigger debounced generation for the given input.
+  ///
+  /// Call this when input changes to start the debounce timer.
+  void onInputChanged(String input) {
+    // Cancel any pending timer
+    _debounceTimer?.cancel();
+
+    // Don't generate for empty or very short input
+    if (input.trim().length < 3) {
+      state = const AsyncData(null);
+      _lastGeneratedInput = null;
+      return;
+    }
+
+    // Start debounce timer
+    _debounceTimer = Timer(_suggestionDebounceDuration, () {
+      _generate(input);
+    });
+  }
+
+  /// Generate suggestion for the given input.
+  Future<void> _generate(String input) async {
+    // Skip if input hasn't changed
+    if (input == _lastGeneratedInput) return;
+
+    // Get the current AI service
+    final service = ref.read(aiServiceProvider);
+
+    // Stop any in-progress generation for LocalAiService
+    if (service is LocalAiService) {
+      await service.stopGeneration();
+    }
+
+    // Mark as loading
+    state = const AsyncLoading();
+
+    try {
+      _lastGeneratedInput = input;
+      final suggestion = await service.generateCommand(input);
+
+      // Only update if this is still the latest request
+      if (_lastGeneratedInput == input) {
+        state = AsyncData(suggestion);
+      }
+    } catch (e) {
+      // Only update error if this is still the latest request
+      if (_lastGeneratedInput == input) {
+        state = AsyncError(e, StackTrace.current);
+      }
+    }
   }
 
   /// Manually trigger regeneration with current input.
@@ -245,8 +332,10 @@ class AiSuggestionController extends _$AiSuggestionController {
     final input = ref.read(aiInputProvider);
     if (input.trim().length < 3) return;
 
-    // Invalidate to trigger rebuild
-    ref.invalidateSelf();
+    // Cancel debounce and generate immediately
+    _debounceTimer?.cancel();
+    _lastGeneratedInput = null; // Force regeneration
+    await _generate(input);
   }
 }
 

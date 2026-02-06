@@ -29,6 +29,9 @@ build/
 coverage/
 *.lcov
 
+# Debug logs
+flutter_*.log
+
 # Secrets (never commit)
 *.env
 *.env.*

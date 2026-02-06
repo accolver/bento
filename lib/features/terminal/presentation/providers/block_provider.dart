@@ -60,6 +60,13 @@ class BlockListState {
   }
 }
 
+/// Maximum output size in memory before truncation (100KB).
+const kMaxOutputSizeBytes = 100 * 1024;
+
+/// Truncation indicator appended when output is truncated.
+const kTruncationIndicator =
+    '\n\n... [Output truncated. Use "Load Full Output" to view all.] ...';
+
 /// Controller for managing the list of terminal blocks.
 ///
 /// Handles block creation, output streaming, status updates,
@@ -70,6 +77,10 @@ class BlockListController extends _$BlockListController {
 
   BlockRepository? _repository;
   String _sessionId = kDefaultSessionId;
+
+  /// Stores the full output for blocks that have been truncated in memory.
+  /// Key: blockId, Value: full output string
+  final Map<String, String> _fullOutputCache = {};
 
   @override
   BlockListState build() {
@@ -148,6 +159,9 @@ class BlockListController extends _$BlockListController {
   ///
   /// If [blockId] is provided, appends to that specific block.
   /// Otherwise appends to the currently active block.
+  ///
+  /// Output is truncated in memory when it exceeds [kMaxOutputSizeBytes].
+  /// The full output is stored in [_fullOutputCache] for later retrieval.
   void appendOutput(String output, {String? blockId}) {
     final targetId = blockId ?? state.activeBlockId;
     if (targetId == null) return;
@@ -155,7 +169,60 @@ class BlockListController extends _$BlockListController {
     state = state.copyWith(
       blocks: state.blocks.map((block) {
         if (block.id == targetId) {
-          return block.copyWith(output: block.output + output);
+          final newOutput = block.output + output;
+          final outputBytes = newOutput.length; // UTF-8 approximation
+
+          // Check if truncation is needed
+          if (outputBytes > kMaxOutputSizeBytes && !block.isTruncated) {
+            // Store full output in cache for later retrieval
+            _fullOutputCache[targetId] = newOutput;
+
+            // Truncate and mark as truncated
+            final truncatedOutput =
+                newOutput.substring(0, kMaxOutputSizeBytes) +
+                    kTruncationIndicator;
+            return block.copyWith(
+              output: truncatedOutput,
+              isTruncated: true,
+            );
+          } else if (block.isTruncated) {
+            // Already truncated - update the cache but not the displayed output
+            final currentFull = _fullOutputCache[targetId] ?? '';
+            _fullOutputCache[targetId] = currentFull + output;
+            return block; // Keep displayed output as-is
+          }
+
+          return block.copyWith(output: newOutput);
+        }
+        return block;
+      }).toList(),
+    );
+  }
+
+  /// Loads the full output for a truncated block.
+  ///
+  /// Returns the full output if available, or null if not truncated
+  /// or not found in cache.
+  String? getFullOutput(String blockId) {
+    return _fullOutputCache[blockId];
+  }
+
+  /// Expands a truncated block to show full output.
+  ///
+  /// This replaces the truncated output with the full output from cache.
+  /// Note: This can cause memory pressure for very large outputs.
+  void loadFullOutput(String blockId) {
+    final fullOutput = _fullOutputCache[blockId];
+    if (fullOutput == null) return;
+
+    state = state.copyWith(
+      blocks: state.blocks.map((block) {
+        if (block.id == blockId && block.isTruncated) {
+          return block.copyWith(
+            output: fullOutput,
+            isTruncated:
+                false, // Mark as not truncated since we're showing full
+          );
         }
         return block;
       }).toList(),

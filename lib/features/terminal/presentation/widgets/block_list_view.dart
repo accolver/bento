@@ -93,9 +93,7 @@ class _BlockListViewState extends ConsumerState<BlockListView> {
         return BlockWidget(
           key: ValueKey(block.id),
           block: block,
-          onRerun: widget.onRerunCommand != null
-              ? () => widget.onRerunCommand!(block.command)
-              : null,
+          onRerun: widget.onRerunCommand,
         );
       },
     );

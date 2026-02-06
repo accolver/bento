@@ -15,27 +15,20 @@ import '../providers/block_provider.dart';
 /// A block consists of:
 /// - Header: command text, status icon, timestamp, collapse toggle
 /// - Content: ANSI-rendered output (collapsible)
+/// - Action bar: copy, re-run buttons (when expanded)
 /// - Left border: colored by status
 class BlockWidget extends ConsumerWidget {
   const BlockWidget({
     super.key,
     required this.block,
-    this.onCopyCommand,
-    this.onCopyOutput,
     this.onRerun,
   });
 
   /// The terminal block to display.
   final TerminalBlock block;
 
-  /// Callback when user copies the command.
-  final VoidCallback? onCopyCommand;
-
-  /// Callback when user copies the output.
-  final VoidCallback? onCopyOutput;
-
   /// Callback when user wants to re-run the command.
-  final VoidCallback? onRerun;
+  final void Function(String command)? onRerun;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,33 +36,42 @@ class BlockWidget extends ConsumerWidget {
     final brightness = theme.brightness;
     final statusColor = BlockColors.forStatus(block.status, brightness);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(
-              color: statusColor,
-              width: BlockColors.statusBorderWidth,
+    return GestureDetector(
+      onLongPress: () => _showContextMenu(context, ref),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: statusColor,
+                width: BlockColors.statusBorderWidth,
+              ),
             ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _BlockHeader(
-              block: block,
-              statusColor: statusColor,
-              onToggle: () => _toggleCollapse(ref),
-              onCopyCommand: onCopyCommand ?? () => _copyCommand(context),
-            ),
-            // TUI session blocks show TUI indicator instead of output
-            if (!block.isCollapsed)
-              block.isTuiSession
-                  ? _TuiSessionContent(block: block)
-                  : _BlockContent(block: block),
-          ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _BlockHeader(
+                block: block,
+                statusColor: statusColor,
+                onToggle: () => _toggleCollapse(ref),
+                onCopyCommand: () => _copyCommand(context),
+              ),
+              // TUI session blocks show TUI indicator instead of output
+              if (!block.isCollapsed)
+                block.isTuiSession
+                    ? _TuiSessionContent(block: block)
+                    : _BlockContent(
+                        block: block,
+                        onCopyOutput: () => _copyOutput(context),
+                        onCopyAll: () => _copyAll(context),
+                        onRerun: () => _rerunCommand(context),
+                        onLoadFullOutput: () => _loadFullOutput(ref),
+                      ),
+            ],
+          ),
         ),
       ),
     );
@@ -87,6 +89,133 @@ class BlockWidget extends ConsumerWidget {
         duration: Duration(seconds: 1),
       ),
     );
+  }
+
+  void _copyOutput(BuildContext context) {
+    final cleanOutput = stripAnsiCodes(block.output);
+    Clipboard.setData(ClipboardData(text: cleanOutput));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Output copied'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _copyAll(BuildContext context) {
+    final cleanOutput = stripAnsiCodes(block.output);
+    final formatted = '\$ ${block.command}\n$cleanOutput';
+    Clipboard.setData(ClipboardData(text: formatted));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Copied to clipboard'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _rerunCommand(BuildContext context) {
+    if (onRerun != null) {
+      onRerun!(block.command);
+    }
+  }
+
+  void _loadFullOutput(WidgetRef ref) {
+    ref.read(blockListControllerProvider.notifier).loadFullOutput(block.id);
+  }
+
+  /// Shows a context menu with all available actions.
+  void _showContextMenu(BuildContext context, WidgetRef ref) {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx + size.width / 2,
+        offset.dy + size.height / 2,
+        offset.dx + size.width / 2,
+        offset.dy + size.height / 2,
+      ),
+      items: [
+        const PopupMenuItem(
+          value: 'copy_command',
+          child: Row(
+            children: [
+              Icon(Icons.terminal, size: 18),
+              SizedBox(width: 12),
+              Text('Copy Command'),
+            ],
+          ),
+        ),
+        if (block.output.isNotEmpty) ...[
+          const PopupMenuItem(
+            value: 'copy_output',
+            child: Row(
+              children: [
+                Icon(Icons.content_copy, size: 18),
+                SizedBox(width: 12),
+                Text('Copy Output'),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'copy_all',
+            child: Row(
+              children: [
+                Icon(Icons.copy_all, size: 18),
+                SizedBox(width: 12),
+                Text('Copy All'),
+              ],
+            ),
+          ),
+        ],
+        if (block.isCompleted && onRerun != null)
+          const PopupMenuItem(
+            value: 'rerun',
+            child: Row(
+              children: [
+                Icon(Icons.replay, size: 18),
+                SizedBox(width: 12),
+                Text('Re-run Command'),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'toggle_collapse',
+          child: Row(
+            children: [
+              Icon(
+                block.isCollapsed ? Icons.expand_more : Icons.expand_less,
+                size: 18,
+              ),
+              const SizedBox(width: 12),
+              Text(block.isCollapsed ? 'Expand' : 'Collapse'),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      if (!context.mounted) return;
+
+      switch (value) {
+        case 'copy_command':
+          _copyCommand(context);
+        case 'copy_output':
+          _copyOutput(context);
+        case 'copy_all':
+          _copyAll(context);
+        case 'rerun':
+          _rerunCommand(context);
+        case 'toggle_collapse':
+          _toggleCollapse(ref);
+      }
+    });
   }
 }
 
@@ -446,21 +575,21 @@ class _TuiSessionContent extends StatelessWidget {
   }
 }
 
-/// Content section showing command output.
+/// Content section showing command output with action bar.
 class _BlockContent extends StatelessWidget {
-  const _BlockContent({required this.block});
+  const _BlockContent({
+    required this.block,
+    this.onCopyOutput,
+    this.onCopyAll,
+    this.onRerun,
+    this.onLoadFullOutput,
+  });
 
   final TerminalBlock block;
-
-  /// Regex to match ANSI escape sequences.
-  static final _ansiEscapeRegex = RegExp(
-    r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])',
-  );
-
-  /// Strips ANSI escape codes from text for display.
-  String _stripAnsiCodes(String text) {
-    return text.replaceAll(_ansiEscapeRegex, '');
-  }
+  final VoidCallback? onCopyOutput;
+  final VoidCallback? onCopyAll;
+  final VoidCallback? onRerun;
+  final VoidCallback? onLoadFullOutput;
 
   @override
   Widget build(BuildContext context) {
@@ -481,31 +610,199 @@ class _BlockContent extends StatelessWidget {
     }
 
     // Strip ANSI codes for clean text display
-    final cleanOutput = _stripAnsiCodes(block.output);
+    final cleanOutput = stripAnsiCodes(block.output);
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
-      child: Container(
-        constraints: const BoxConstraints(maxHeight: 300),
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.black26 : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: SingleChildScrollView(
-          child: SelectableText(
-            cleanOutput,
-            style: TextStyle(
-              fontFamily: 'JetBrainsMonoNF',
-              fontSize: 12,
-              height: 1.3,
-              color: isDark ? Colors.white70 : Colors.black87,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Output content
+          Container(
+            constraints: const BoxConstraints(maxHeight: 300),
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.black26 : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                cleanOutput,
+                style: TextStyle(
+                  fontFamily: 'JetBrainsMonoNF',
+                  fontSize: 12,
+                  height: 1.3,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
             ),
           ),
-        ),
+          // Truncation indicator with "Load Full Output" button
+          if (block.isTruncated)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: InkWell(
+                onTap: onLoadFullOutput,
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.orange.shade900.withValues(alpha: 0.3)
+                        : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.orange.shade700.withValues(alpha: 0.5)
+                          : Colors.orange.shade200,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.unfold_more,
+                        size: 16,
+                        color: isDark
+                            ? Colors.orange.shade200
+                            : Colors.orange.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Load Full Output',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: isDark
+                              ? Colors.orange.shade200
+                              : Colors.orange.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          // Action bar (only for completed blocks)
+          if (block.isCompleted)
+            _BlockActionBar(
+              onCopyOutput: onCopyOutput,
+              onCopyAll: onCopyAll,
+              onRerun: onRerun,
+            ),
+        ],
       ),
     );
   }
+}
+
+/// Action bar with copy and re-run buttons.
+class _BlockActionBar extends StatelessWidget {
+  const _BlockActionBar({
+    this.onCopyOutput,
+    this.onCopyAll,
+    this.onRerun,
+  });
+
+  final VoidCallback? onCopyOutput;
+  final VoidCallback? onCopyAll;
+  final VoidCallback? onRerun;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          _ActionButton(
+            icon: Icons.content_copy,
+            label: 'Output',
+            onPressed: onCopyOutput,
+            tooltip: 'Copy output to clipboard',
+          ),
+          const SizedBox(width: 8),
+          _ActionButton(
+            icon: Icons.copy_all,
+            label: 'All',
+            onPressed: onCopyAll,
+            tooltip: 'Copy command and output',
+          ),
+          const SizedBox(width: 8),
+          _ActionButton(
+            icon: Icons.replay,
+            label: 'Re-run',
+            onPressed: onRerun,
+            tooltip: 'Re-run this command',
+            color: theme.colorScheme.primary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Individual action button in the action bar.
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    this.onPressed,
+    this.tooltip,
+    this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+  final String? tooltip;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final buttonColor = color ?? theme.colorScheme.onSurfaceVariant;
+
+    final button = InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: buttonColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: buttonColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (tooltip != null) {
+      return Tooltip(message: tooltip!, child: button);
+    }
+    return button;
+  }
+}
+
+/// Regex to match ANSI escape sequences.
+final _ansiEscapeRegex = RegExp(
+  r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])',
+);
+
+/// Strips ANSI escape codes from text.
+String stripAnsiCodes(String text) {
+  return text.replaceAll(_ansiEscapeRegex, '');
 }

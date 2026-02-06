@@ -1,11 +1,16 @@
 // @telos-test L1:function:lib/features/ai/domain/services:ai_service_factory
 
+import 'package:bento/features/ai/data/repositories/ai_config_repository.dart';
+import 'package:bento/features/ai/data/services/cloud_ai_service.dart';
 import 'package:bento/features/ai/data/services/mock_ai_service.dart';
 import 'package:bento/features/ai/domain/entities/ai_config.dart';
 import 'package:bento/features/ai/domain/entities/ai_privacy_mode.dart';
 import 'package:bento/features/ai/domain/services/ai_service.dart';
 import 'package:bento/features/ai/domain/services/ai_service_factory.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+
+class MockAiConfigRepository extends Mock implements AiConfigRepository {}
 
 void main() {
   group('AiServiceFactory', () {
@@ -97,12 +102,17 @@ void main() {
     });
 
     group('createCloudService', () {
-      // @telos-scenario L1:function:...:ai_service_factory:cloud-not-implemented
-      test('throws not implemented exception', () async {
-        expect(
-          () => factory.createCloudService('api-key', CloudAiProvider.claude),
-          throwsA(isA<AiServiceException>()),
+      // @telos-scenario L1:function:...:ai_service_factory:cloud-creates-service
+      test('creates CloudAiService with repository and provider', () {
+        final mockRepo = MockAiConfigRepository();
+        final service = factory.createCloudService(
+          mockRepo,
+          CloudAiProvider.claude,
         );
+
+        expect(service, isA<CloudAiService>());
+        expect(service.serviceName, contains('Claude'));
+        expect(service.privacyMode, equals(AiPrivacyMode.cloud));
       });
     });
 

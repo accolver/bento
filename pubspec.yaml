@@ -61,6 +61,11 @@ dependencies:
   # File Picker
   file_picker: ^8.0.0
 
+
+
+  # Local AI / LLM
+  llama_flutter_android: ^0.1.1
+
   # Platform
   device_info_plus: ^10.1.0
   package_info_plus: ^8.0.0

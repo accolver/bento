@@ -1,6 +1,9 @@
 // @telos L1:function:lib/features/ai/domain/services:ai_service_factory
 
 import '../entities/ai_config.dart';
+import '../../data/repositories/ai_config_repository.dart';
+import '../../data/services/cloud_ai_service.dart';
+import '../../data/services/local_ai_service.dart';
 import '../../data/services/mock_ai_service.dart';
 import 'ai_service.dart';
 
@@ -30,14 +33,16 @@ class AiServiceFactory {
   /// The [sshSession] parameter is required for remote mode to communicate
   /// with Ollama on the connected server.
   ///
+  /// The [configRepository] is required for cloud mode to retrieve API keys.
+  ///
   /// Returns the appropriate service, falling back to [MockAiService] if
   /// the requested service is unavailable.
   Future<AiService> createService(
     AiConfig config, {
     // SSH session for remote mode - type will be SshSession when that's implemented
     dynamic sshSession,
-    // Secure storage for API keys - type will be FlutterSecureStorage
-    dynamic secureStorage,
+    // Config repository for API key access
+    AiConfigRepository? configRepository,
   }) async {
     switch (config.mode) {
       case AiMode.unconfigured:
@@ -57,12 +62,12 @@ class AiServiceFactory {
 
       case AiMode.cloud:
         // Try to create cloud service, fallback to mock if no API key
-        if (secureStorage != null && config.cloudProvider != null) {
+        if (configRepository != null && config.cloudProvider != null) {
           try {
-            // API key retrieval will be implemented in cloud-ai-providers change
-            final apiKey = await _getApiKey(secureStorage);
-            if (apiKey != null) {
-              return await createCloudService(apiKey, config.cloudProvider!);
+            final hasKey = await configRepository.hasApiKey();
+            if (hasKey) {
+              return createCloudService(
+                  configRepository, config.cloudProvider!);
             }
           } catch (e) {
             // API key invalid or network error, fallback to mock
@@ -102,33 +107,43 @@ class AiServiceFactory {
   ///
   /// Throws [AiServiceException] if the model file doesn't exist or fails to load.
   ///
-  /// **Note**: Implementation will be added in `local-llm` change.
-  /// Currently throws to fall back to mock.
+  /// Uses flutter_llama for on-device inference with llama.cpp backend.
+  /// Supports GPU acceleration on iOS/macOS (Metal) and Android (Vulkan/OpenCL).
   Future<AiService> createLocalService(String modelPath) async {
-    // TODO: Implement in local-llm change using flutter_llama
-    throw AiServiceException(
-      'Local AI not yet implemented',
-      code: 'not_implemented',
+    final service = LocalAiService(
+      modelPath: modelPath,
+      contextSize: 2048,
+      maxTokens: 256,
+      temperature: 0.3,
+      nThreads: 4,
+      useGpu: true,
     );
+
+    // Verify the service is available (model exists and can load)
+    if (!await service.isAvailable()) {
+      await service.dispose();
+      throw AiServiceException(
+        'Local model not available at: $modelPath',
+        code: 'model_not_found',
+      );
+    }
+
+    return service;
   }
 
   /// Create a cloud AI service with the specified provider.
   ///
-  /// [apiKey] - OpenRouter API key.
+  /// [configRepository] - Repository for accessing API key.
   /// [provider] - Which cloud model to use.
   ///
-  /// Throws [AiServiceException] if the API key is invalid.
-  ///
-  /// **Note**: Implementation will be added in `cloud-ai-providers` change.
-  /// Currently throws to fall back to mock.
-  Future<AiService> createCloudService(
-    String apiKey,
+  /// Returns a [CloudAiService] configured for the specified provider.
+  AiService createCloudService(
+    AiConfigRepository configRepository,
     CloudAiProvider provider,
-  ) async {
-    // TODO: Implement in cloud-ai-providers change using OpenRouter
-    throw AiServiceException(
-      'Cloud AI not yet implemented',
-      code: 'not_implemented',
+  ) {
+    return CloudAiService(
+      configRepository: configRepository,
+      provider: provider,
     );
   }
 

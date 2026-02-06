@@ -106,13 +106,13 @@
 
 ## 11. Integration Testing
 
-- [ ] 11.1 Write integration test: launch vim, verify TUI mode activates, exit
+- [x] 11.1 Write integration test: launch vim, verify TUI mode activates, exit
       vim, verify return to blocks mode
-- [ ] 11.2 Write integration test: run htop, verify full-screen rendering,
+- [x] 11.2 Write integration test: run htop, verify full-screen rendering,
       verify resize works
-- [ ] 11.3 Write integration test: TUI session block appears in history after
+- [x] 11.3 Write integration test: TUI session block appears in history after
       TUI exit
-- [ ] 11.4 Write integration test: disconnect during TUI mode marks block as
+- [x] 11.4 Write integration test: disconnect during TUI mode marks block as
       cancelled
 - [ ] 11.5 Test with real TUI applications (vim, htop, less, nano) on actual SSH
       connection

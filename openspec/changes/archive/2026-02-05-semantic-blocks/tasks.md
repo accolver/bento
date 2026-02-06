@@ -53,7 +53,7 @@
 - [x] 5.4 Implement collapse/expand animation using AnimatedSize
 - [x] 5.5 Add status-based left border colors (green/red/blue/yellow)
 - [x] 5.6 Implement chevron icon toggle for expand/collapse state
-- [ ] 5.7 Write widget tests for BlockWidget states
+- [x] 5.7 Write widget tests for BlockWidget states
 
 ## 6. Block Status Indicators
 
@@ -68,11 +68,11 @@
 ## 7. Block Actions
 
 - [x] 7.1 Copy Command integrated into BlockWidget (long-press header)
-- [ ] 7.2 Implement "Copy Output" action (strip ANSI codes)
-- [ ] 7.3 Implement "Copy All" action (command + output)
-- [ ] 7.4 Implement "Re-run" action to re-execute command
-- [ ] 7.5 Implement long-press context menu with full actions
-- [ ] 7.6 Add "Collapse All" and "Expand All" to session menu
+- [x] 7.2 Implement "Copy Output" action (strip ANSI codes)
+- [x] 7.3 Implement "Copy All" action (command + output)
+- [x] 7.4 Implement "Re-run" action to re-execute command
+- [x] 7.5 Implement long-press context menu with full actions
+- [x] 7.6 Add "Collapse All" and "Expand All" to session menu
 
 ## 8. Block List View
 
@@ -90,13 +90,13 @@
 - [x] 9.3 Route keyboard input through OutputRouter for Ctrl+C detection
 - [x] 9.4 Add feature flag toggle (enableSemanticBlocks in TerminalConfig)
 - [x] 9.5 Wire OutputRouter to SSH connection in TerminalController
-- [ ] 9.6 Add app bar actions (collapse all, expand all, clear blocks)
+- [x] 9.6 Add app bar actions (collapse all, expand all, clear blocks)
 
 ## 10. Persistence & History
 
-- [ ] 10.1 Implement block save to database on completion
-- [ ] 10.2 Implement block load from database on session resume
-- [ ] 10.3 Implement output compression for database storage
-- [ ] 10.4 Implement output truncation for large outputs (100KB limit in memory)
-- [ ] 10.5 Implement "Load Full Output" for truncated blocks
-- [ ] 10.6 Add session_id column default for pre-session-tabs usage
+- [x] 10.1 Implement block save to database on completion
+- [x] 10.2 Implement block load from database on session resume
+- [x] 10.3 Implement output compression for database storage
+- [x] 10.4 Implement output truncation for large outputs (100KB limit in memory)
+- [x] 10.5 Implement "Load Full Output" for truncated blocks
+- [x] 10.6 Add session_id column default for pre-session-tabs usage

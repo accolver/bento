@@ -7,6 +7,9 @@ import 'package:xterm/xterm.dart';
 
 import '../../../../app/router.dart';
 import '../../../../core/constants/terminal_colors.dart';
+import '../../../ai/presentation/providers/ai_providers.dart';
+import '../../../ai/presentation/widgets/ai_fab.dart';
+import '../../../ai/presentation/widgets/ai_ghostwriter_panel.dart';
 import '../../domain/entities/terminal_config.dart';
 import '../../domain/entities/terminal_mode.dart';
 import '../../domain/entities/view_mode.dart';
@@ -95,23 +98,37 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     if (widget.embedded) {
       return Container(
         color: colors.background,
-        child: Column(
+        child: Stack(
           children: [
-            // Main content area - switches instantly based on display mode
-            Expanded(
-              child: GestureDetector(
-                // Ensure tapping on the terminal area requests focus
-                onTap: () {
-                  // This ensures keyboard appears when tapping the terminal
-                  FocusScope.of(context).requestFocus();
-                },
-                behavior: HitTestBehavior.translucent,
-                child: _buildMainContent(displayMode, viewMode, config),
-              ),
+            Column(
+              children: [
+                // Main content area - switches instantly based on display mode
+                Expanded(
+                  child: GestureDetector(
+                    // Ensure tapping on the terminal area requests focus
+                    onTap: () {
+                      // This ensures keyboard appears when tapping the terminal
+                      FocusScope.of(context).requestFocus();
+                    },
+                    behavior: HitTestBehavior.translucent,
+                    child: _buildMainContent(displayMode, viewMode, config),
+                  ),
+                ),
+
+                // Modifier keys bar - always visible
+                ModifierKeysBar(onKey: _handleKey),
+              ],
             ),
 
-            // Modifier keys bar - always visible
-            ModifierKeysBar(onKey: _handleKey),
+            // AI FAB - visible in split/blocks modes, hidden in TUI/fullTerminal
+            if (_shouldShowAiFab(displayMode, viewMode))
+              Positioned(
+                right: 16,
+                bottom: 70, // Above modifier bar
+                child: AiFab(
+                  onPressed: () => _showAiPanel(context),
+                ),
+              ),
           ],
         ),
       );
@@ -128,20 +145,105 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         backgroundColor: colors.background,
         appBar: _buildAppBar(colors, config, displayMode),
         body: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              // Main content area - switches instantly based on display mode
-              Expanded(
-                child: _buildMainContent(displayMode, viewMode, config),
+              Column(
+                children: [
+                  // Main content area - switches instantly based on display mode
+                  Expanded(
+                    child: _buildMainContent(displayMode, viewMode, config),
+                  ),
+
+                  // Modifier keys bar - always visible
+                  ModifierKeysBar(onKey: _handleKey),
+                ],
               ),
 
-              // Modifier keys bar - always visible
-              ModifierKeysBar(onKey: _handleKey),
+              // AI FAB - visible in split/blocks modes, hidden in TUI/fullTerminal
+              if (_shouldShowAiFab(displayMode, viewMode))
+                Positioned(
+                  right: 16,
+                  bottom: 70, // Above modifier bar
+                  child: AiFab(
+                    onPressed: () => _showAiPanel(context),
+                  ),
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// Determines if the AI FAB should be visible.
+  ///
+  /// Hidden in TUI mode and full terminal view to avoid obstructing content.
+  bool _shouldShowAiFab(TerminalMode displayMode, ViewMode viewMode) {
+    // Hide in TUI mode (vim, htop, etc.)
+    if (displayMode == TerminalMode.tui) {
+      return false;
+    }
+
+    // Hide in full terminal view
+    if (viewMode == ViewMode.fullTerminal) {
+      return false;
+    }
+
+    // Show in split view and full blocks view
+    return true;
+  }
+
+  /// Shows the AI Ghostwriter bottom sheet panel.
+  void _showAiPanel(BuildContext context) {
+    // Clear any previous input
+    ref.read(aiInputProvider.notifier).clear();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: AiGhostwriterPanel(
+          onExecute: (command) {
+            Navigator.of(context).pop();
+            _executeAiCommand(command);
+          },
+          onDismiss: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
+
+  /// Executes a command generated by AI.
+  void _executeAiCommand(String command) {
+    final controller = ref.read(terminalControllerProvider.notifier);
+    final config = ref.read(terminalConfigProvider);
+
+    // If semantic blocks enabled, route through output router to create a block
+    if (config.enableSemanticBlocks) {
+      final outputRouter = ref.read(outputRouterControllerProvider.notifier);
+      // Send each character to build up the input buffer
+      for (final char in command.split('')) {
+        outputRouter.processInput(char);
+      }
+      // Send Enter to trigger block creation
+      outputRouter.processInput('\n');
+    }
+
+    // Write the command to the terminal
+    controller.write('$command\n');
+
+    // Request focus back on the terminal view after a short delay
+    // to allow the bottom sheet dismissal animation to complete
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        // Find and focus the terminal view
+        FocusScope.of(context).requestFocus();
+      }
+    });
   }
 
   /// Handles Android back button press.

@@ -160,3 +160,44 @@ extension TerminalTheme on ThemeData {
   Color get terminalSuccessColor =>
       brightness == Brightness.dark ? const Color(0xFF00FF00) : Colors.green;
 }
+
+/// AI-specific theme extensions.
+///
+/// Provides colors for AI Ghostwriter UI components.
+extension AiTheme on ThemeData {
+  /// Primary AI accent color (purple).
+  Color get aiPrimaryColor => const Color(0xFFBD93F9);
+
+  /// Secondary AI color (muted purple).
+  Color get aiSecondaryColor => brightness == Brightness.dark
+      ? const Color(0xFF6272A4)
+      : const Color(0xFF8959A8);
+
+  /// AI glow effect color (semi-transparent purple).
+  Color get aiGlowColor => const Color(0xFFBD93F9).withValues(alpha: 0.3);
+
+  /// AI gradient start color.
+  Color get aiGradientStart => const Color(0xFFBD93F9);
+
+  /// AI gradient end color (magenta).
+  Color get aiGradientEnd => const Color(0xFFB294BB);
+
+  /// AI panel background color.
+  Color get aiPanelBackground => brightness == Brightness.dark
+      ? const Color(0xFF282A36)
+      : const Color(0xFFF8F8F2);
+
+  /// AI suggestion card background.
+  Color get aiSuggestionBackground => brightness == Brightness.dark
+      ? const Color(0xFF21262D)
+      : const Color(0xFFF6F8FA);
+
+  /// High confidence indicator color (green).
+  Color get aiHighConfidenceColor => const Color(0xFF4CAF50);
+
+  /// Medium confidence indicator color (yellow).
+  Color get aiMediumConfidenceColor => const Color(0xFFF0C674);
+
+  /// Low confidence indicator color (orange).
+  Color get aiLowConfidenceColor => const Color(0xFFFF9800);
+}

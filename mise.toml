@@ -1,0 +1,262 @@
+# Bento Development Tasks
+# Run `mise tasks` to see all available tasks
+# Run `mise run <task>` or `mise <task>` to execute
+
+[tools]
+flutter = "latest"
+
+[env]
+# Default device for deployment (Pixel 9 Pro wireless)
+BENTO_DEVICE = "adb-4C091FDAP0032A-QXeCd8._adb-tls-connect._tcp"
+
+# =============================================================================
+# Build Tasks
+# =============================================================================
+
+[tasks.build]
+alias = "b"
+description = "Build debug APK"
+run = "flutter build apk --debug"
+
+[tasks."build:release"]
+alias = "br"
+description = "Build release APK"
+run = "flutter build apk --release"
+
+[tasks."build:bundle"]
+description = "Build Android App Bundle for Play Store"
+run = "flutter build appbundle --release"
+
+# =============================================================================
+# Install & Run Tasks
+# =============================================================================
+
+[tasks.install]
+alias = "i"
+description = "Install debug APK to connected device"
+depends = ["build"]
+run = "flutter install --debug -d $BENTO_DEVICE"
+
+[tasks."install:release"]
+alias = "ir"
+description = "Install release APK to connected device"
+depends = ["build:release"]
+run = "flutter install --release -d $BENTO_DEVICE"
+
+[tasks.run]
+alias = "r"
+description = "Run app on connected device with hot reload"
+run = "flutter run -d $BENTO_DEVICE"
+
+[tasks."run:release"]
+description = "Run release build on device"
+run = "flutter run --release -d $BENTO_DEVICE"
+
+[tasks.hot]
+alias = "h"
+description = "Run with hot reload (same as run)"
+run = "flutter run -d $BENTO_DEVICE"
+
+# =============================================================================
+# Test Tasks
+# =============================================================================
+
+[tasks.test]
+alias = "t"
+description = "Run all tests"
+run = "flutter test"
+
+[tasks."test:ai"]
+description = "Run AI feature tests"
+run = "flutter test test/features/ai/"
+
+[tasks."test:terminal"]
+description = "Run terminal feature tests"
+run = "flutter test test/features/terminal/"
+
+[tasks."test:watch"]
+alias = "tw"
+description = "Run tests in watch mode"
+run = "flutter test --watch"
+
+[tasks."test:coverage"]
+description = "Run tests with coverage report"
+run = "flutter test --coverage && genhtml coverage/lcov.info -o coverage/html"
+
+# =============================================================================
+# Code Quality Tasks
+# =============================================================================
+
+[tasks.analyze]
+alias = "a"
+description = "Run static analysis"
+run = "flutter analyze"
+
+[tasks.format]
+alias = "f"
+description = "Format all Dart code"
+run = "dart format lib test"
+
+[tasks."format:check"]
+description = "Check formatting without changes"
+run = "dart format --set-exit-if-changed lib test"
+
+[tasks.lint]
+alias = "l"
+description = "Run analyzer and format check"
+depends = ["analyze", "format:check"]
+
+[tasks.fix]
+description = "Auto-fix analyzable issues"
+run = "dart fix --apply"
+
+# =============================================================================
+# Code Generation Tasks
+# =============================================================================
+
+[tasks.gen]
+alias = "g"
+description = "Run build_runner code generation"
+run = "flutter pub run build_runner build --delete-conflicting-outputs"
+
+[tasks."gen:watch"]
+alias = "gw"
+description = "Run build_runner in watch mode"
+run = "flutter pub run build_runner watch --delete-conflicting-outputs"
+
+[tasks.clean]
+alias = "c"
+description = "Clean build artifacts and regenerate"
+run = '''
+flutter clean
+flutter pub get
+flutter pub run build_runner build --delete-conflicting-outputs
+'''
+
+# =============================================================================
+# Device Management Tasks
+# =============================================================================
+
+[tasks.devices]
+alias = "d"
+description = "List connected devices"
+run = "flutter devices"
+
+[tasks.logs]
+description = "Show device logs (filtered for Bento)"
+run = "adb -s $BENTO_DEVICE logcat | grep -E '(flutter|bento|Llama)'"
+
+[tasks."logs:all"]
+description = "Show all device logs"
+run = "adb -s $BENTO_DEVICE logcat"
+
+[tasks."logs:clear"]
+description = "Clear device logs"
+run = "adb -s $BENTO_DEVICE logcat -c"
+
+# =============================================================================
+# ADB Wireless Tasks
+# =============================================================================
+
+[tasks."adb:pair"]
+description = "Pair with device for wireless debugging"
+usage = '''
+arg "<ip:port>" help="Device IP:port from Wireless debugging > Pair"
+arg "<code>" help="6-digit pairing code"
+'''
+run = "adb pair $usage_ip_port $usage_code"
+
+[tasks."adb:connect"]
+description = "Connect to paired wireless device"
+usage = 'arg "<ip:port>" help="Device IP:port from Wireless debugging screen"'
+run = "adb connect $usage_ip_port"
+
+[tasks."adb:disconnect"]
+description = "Disconnect all wireless devices"
+run = "adb disconnect"
+
+[tasks."adb:restart"]
+description = "Restart ADB server"
+run = "adb kill-server && adb start-server"
+
+# =============================================================================
+# Utility Tasks
+# =============================================================================
+
+[tasks.deps]
+description = "Get dependencies"
+run = "flutter pub get"
+
+[tasks.upgrade]
+description = "Upgrade dependencies"
+run = "flutter pub upgrade"
+
+[tasks.outdated]
+description = "Show outdated dependencies"
+run = "flutter pub outdated"
+
+[tasks.doctor]
+description = "Run Flutter doctor"
+run = "flutter doctor -v"
+
+[tasks.size]
+description = "Analyze APK size"
+run = "flutter build apk --analyze-size"
+
+# =============================================================================
+# Git Tasks
+# =============================================================================
+
+[tasks.status]
+alias = "s"
+description = "Git status"
+run = "git status"
+
+[tasks.diff]
+description = "Git diff"
+run = "git diff"
+
+[tasks.commit]
+description = "Git add all and commit"
+usage = 'arg "<message>" help="Commit message"'
+run = "git add -A && git commit -m \"$usage_message\""
+
+# =============================================================================
+# Combined Workflow Tasks
+# =============================================================================
+
+[tasks.dev]
+description = "Full dev setup: deps, generate, run"
+run = '''
+flutter pub get
+flutter pub run build_runner build --delete-conflicting-outputs
+flutter run -d $BENTO_DEVICE
+'''
+
+[tasks.ci]
+description = "Run CI checks: analyze, format, test"
+depends = ["analyze", "format:check", "test"]
+
+[tasks.ship]
+description = "Build and install release to device"
+depends = ["ci", "install:release"]
+
+[tasks.refresh]
+description = "Clean rebuild and install"
+depends = ["clean", "install"]
+
+# =============================================================================
+# AI Model Tasks
+# =============================================================================
+
+[tasks."model:list"]
+description = "List downloaded AI models"
+run = '''
+echo "Downloaded models in app data:"
+adb -s $BENTO_DEVICE shell ls -lh /data/data/com.example.bento/app_flutter/bento/models/ 2>/dev/null || echo "No models downloaded yet"
+'''
+
+[tasks."model:clear"]
+description = "Clear downloaded AI models from device"
+confirm = "This will delete all downloaded AI models. Continue?"
+run = "adb -s $BENTO_DEVICE shell rm -rf /data/data/com.example.bento/app_flutter/bento/models/"

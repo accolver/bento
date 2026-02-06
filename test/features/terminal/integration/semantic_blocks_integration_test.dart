@@ -284,5 +284,98 @@ void main() {
 
       expect(blockController.state.blocks.first.status, BlockStatus.cancelled);
     });
+
+    group('backspace handling', () {
+      // @telos-scenario L2:...:semantic_blocks:backspace-correction
+      test('backspace allows user to correct typos before submitting',
+          () async {
+        // User sees prompt
+        outputRouter.processOutput('user@host:~\$ \n');
+
+        // User types "lss" (typo)
+        outputRouter.processInput('l');
+        outputRouter.processInput('s');
+        outputRouter.processInput('s');
+
+        // User backspaces to fix typo
+        outputRouter.processInput('\x7f'); // DEL (127)
+
+        // User presses Enter
+        outputRouter.processInput('\r');
+
+        // Block should have corrected command
+        expect(blockController.state.blocks, hasLength(1));
+        expect(blockController.state.blocks.first.command, 'ls');
+      });
+
+      // @telos-scenario L2:...:semantic_blocks:bs-character
+      test('BS character (0x08) also works for backspace', () async {
+        // User sees prompt
+        outputRouter.processOutput('user@host:~\$ \n');
+
+        // User types "catt" (typo)
+        for (final char in 'catt'.split('')) {
+          outputRouter.processInput(char);
+        }
+
+        // User backspaces using BS (0x08)
+        outputRouter.processInput('\x08');
+
+        // User types correct character
+        outputRouter.processInput(' ');
+        outputRouter.processInput('f');
+        outputRouter.processInput('\r');
+
+        // Block should have corrected command
+        expect(blockController.state.blocks, hasLength(1));
+        expect(blockController.state.blocks.first.command, 'cat f');
+      });
+
+      // @telos-scenario L2:...:semantic_blocks:backspace-entire-command
+      test('user can backspace entire command and retype', () async {
+        // User sees prompt
+        outputRouter.processOutput('user@host:~\$ \n');
+
+        // User types "wrong"
+        for (final char in 'wrong'.split('')) {
+          outputRouter.processInput(char);
+        }
+
+        // User backspaces everything
+        for (var i = 0; i < 5; i++) {
+          outputRouter.processInput('\x7f');
+        }
+
+        // User types correct command
+        for (final char in 'correct'.split('')) {
+          outputRouter.processInput(char);
+        }
+        outputRouter.processInput('\r');
+
+        // Block should have new command
+        expect(blockController.state.blocks, hasLength(1));
+        expect(blockController.state.blocks.first.command, 'correct');
+      });
+
+      // @telos-scenario L2:...:semantic_blocks:backspace-safe-empty
+      test('backspace on empty buffer does not crash', () async {
+        // User sees prompt
+        outputRouter.processOutput('user@host:~\$ \n');
+
+        // User presses backspace multiple times before typing
+        outputRouter.processInput('\x7f');
+        outputRouter.processInput('\x7f');
+        outputRouter.processInput('\x08');
+
+        // User then types command
+        outputRouter.processInput('l');
+        outputRouter.processInput('s');
+        outputRouter.processInput('\r');
+
+        // Should work normally
+        expect(blockController.state.blocks, hasLength(1));
+        expect(blockController.state.blocks.first.command, 'ls');
+      });
+    });
   });
 }

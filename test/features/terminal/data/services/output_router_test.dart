@@ -606,10 +606,87 @@ void main() {
         router.processInput('l');
         router.processInput('s');
         router.processInput('s');
-        router.processInput('\x7f'); // Backspace
+        router.processInput('\x7f'); // Backspace (DEL, 127)
         router.processInput('\r');
 
         verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-handles-backspace-bs
+      test('handles BS character (0x08) for backspace', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User types "lss" then backspaces using BS (0x08) and types correct char
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('s');
+        router.processInput('\x08'); // Backspace (BS, 8)
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-multiple-backspaces
+      test('handles multiple consecutive backspaces', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User types "hello" then backspaces all and types "ls"
+        for (final char in 'hello'.split('')) {
+          router.processInput(char);
+        }
+        // Backspace 5 times
+        for (var i = 0; i < 5; i++) {
+          router.processInput('\x7f');
+        }
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-backspace-on-empty
+      test('handles backspace on empty input buffer (no crash)', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User presses backspace before typing anything
+        router.processInput('\x7f');
+        router.processInput('\x7f');
+        router.processInput('\x7f');
+
+        // Then types command
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:input-backspace-partial-word
+      test('handles backspace to correct middle of command', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt appears
+        router.processOutput('❯ \n');
+
+        // User types "git statux" then corrects to "git status"
+        for (final char in 'git statux'.split('')) {
+          router.processInput(char);
+        }
+        router.processInput('\x7f'); // Remove 'x'
+        router.processInput('s'); // Add 's'
+        router.processInput('\r');
+
+        verify(() => mockController.createBlock('git status')).called(1);
       });
 
       // @telos-scenario L1:...:output_router:input-ctrl-c-clears-buffer

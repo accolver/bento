@@ -9,14 +9,17 @@ import '../../../../app/router.dart';
 import '../../../../core/constants/terminal_colors.dart';
 import '../../domain/entities/terminal_config.dart';
 import '../../domain/entities/terminal_mode.dart';
+import '../../domain/entities/view_mode.dart';
 import '../providers/block_provider.dart';
 import '../providers/output_router_provider.dart';
 import '../providers/terminal_config_provider.dart';
 import '../providers/terminal_display_mode_provider.dart';
 import '../providers/terminal_provider.dart';
+import '../providers/view_mode_provider.dart';
 import '../widgets/block_list_view.dart';
 import '../widgets/modifier_keys_bar.dart';
 import '../widgets/terminal_view.dart';
+import '../widgets/view_mode_toggle.dart';
 
 /// Full-screen terminal display with modifier key bar.
 ///
@@ -84,6 +87,8 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     final config = ref.watch(terminalConfigProvider);
     // Watch the current display mode (blocks, tui, or classic)
     final displayMode = ref.watch(currentTerminalModeProvider);
+    // Watch the user's selected view mode
+    final viewMode = ref.watch(viewModeControllerProvider);
 
     // When embedded, just return the terminal content without Scaffold/AppBar
     // Back button handling is done by the parent (MultiSessionTerminalScreen)
@@ -101,7 +106,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
                   FocusScope.of(context).requestFocus();
                 },
                 behavior: HitTestBehavior.translucent,
-                child: _buildMainContent(displayMode, config),
+                child: _buildMainContent(displayMode, viewMode, config),
               ),
             ),
 
@@ -127,7 +132,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
             children: [
               // Main content area - switches instantly based on display mode
               Expanded(
-                child: _buildMainContent(displayMode, config),
+                child: _buildMainContent(displayMode, viewMode, config),
               ),
 
               // Modifier keys bar - always visible
@@ -186,21 +191,31 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     }
   }
 
-  /// Builds the main content area based on current display mode.
+  /// Builds the main content area based on current display mode and user's view mode.
   ///
-  /// - [TerminalMode.blocks]: Shows BlockListView + terminal input area
-  /// - [TerminalMode.tui]: Shows full-screen terminal for TUI apps (vim, htop, etc.)
-  /// - [TerminalMode.classic]: Shows classic full-screen terminal view
-  Widget _buildMainContent(TerminalMode displayMode, TerminalConfig config) {
-    switch (displayMode) {
-      case TerminalMode.blocks:
+  /// When in TUI mode (detected automatically), always shows full-screen terminal.
+  /// Otherwise, respects the user's selected [ViewMode]:
+  /// - [ViewMode.split]: Shows BlockListView + terminal input area
+  /// - [ViewMode.fullTerminal]: Shows full-screen terminal view
+  /// - [ViewMode.fullBlocks]: Shows full-screen blocks view
+  Widget _buildMainContent(
+    TerminalMode displayMode,
+    ViewMode viewMode,
+    TerminalConfig config,
+  ) {
+    // TUI mode always takes precedence (for vim, htop, etc.)
+    if (displayMode == TerminalMode.tui) {
+      return _buildFullScreenTerminalView();
+    }
+
+    // Otherwise, use the user's selected view mode
+    switch (viewMode) {
+      case ViewMode.split:
         return _buildSemanticBlocksView();
-      case TerminalMode.tui:
-        // Full-screen terminal for TUI applications
-        // No animation - instant switch for responsiveness
-        return _buildFullScreenTerminalView();
-      case TerminalMode.classic:
+      case ViewMode.fullTerminal:
         return _buildClassicTerminalView();
+      case ViewMode.fullBlocks:
+        return _buildFullBlocksView();
     }
   }
 
@@ -209,8 +224,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     TerminalConfig config,
     TerminalMode displayMode,
   ) {
-    // In TUI mode, show minimal app bar (no block controls)
+    // In TUI mode, show minimal app bar (no view mode controls)
     final isInTuiMode = displayMode == TerminalMode.tui;
+    final viewMode = ref.watch(viewModeControllerProvider);
+    final showsBlocks = viewMode.showsBlocks;
 
     return AppBar(
       title: Text(widget.title ?? 'Terminal'),
@@ -223,19 +240,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       actions: [
         // Connection status indicator - always visible
         _ConnectionStatusIndicator(),
-        // Toggle between semantic blocks and classic view (hidden in TUI mode)
-        if (!isInTuiMode)
-          IconButton(
-            icon: Icon(
-              config.enableSemanticBlocks ? Icons.view_agenda : Icons.terminal,
-            ),
-            tooltip: config.enableSemanticBlocks
-                ? 'Switch to classic view'
-                : 'Switch to block view',
-            onPressed: _toggleViewMode,
-          ),
-        // Collapse/expand all (only in semantic blocks mode, hidden in TUI mode)
-        if (!isInTuiMode && config.enableSemanticBlocks)
+        // View mode toggle (hidden in TUI mode)
+        if (!isInTuiMode) const ViewModeCycleButton(),
+        // Collapse/expand all (only when blocks are visible, hidden in TUI mode)
+        if (!isInTuiMode && showsBlocks)
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: _handleMenuAction,
@@ -297,6 +305,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     );
   }
 
+  /// Builds split view with blocks at top and terminal input at bottom.
   Widget _buildSemanticBlocksView() {
     final brightness = Theme.of(context).brightness;
     final colors = TerminalColors.forBrightness(brightness);
@@ -338,15 +347,13 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     );
   }
 
-  void _toggleViewMode() {
-    // Toggle the semantic blocks feature flag
-    // In a real app, this would update user preferences
-    // For now, we just show a snackbar explaining the feature
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('View mode toggle - configure in settings'),
-        duration: Duration(seconds: 2),
-      ),
+  /// Builds full-screen blocks view (no terminal input area).
+  ///
+  /// Shows only the semantic blocks list taking the full available space.
+  /// Users can tap on command blocks to rerun them.
+  Widget _buildFullBlocksView() {
+    return BlockListView(
+      onRerunCommand: _handleRerunCommand,
     );
   }
 

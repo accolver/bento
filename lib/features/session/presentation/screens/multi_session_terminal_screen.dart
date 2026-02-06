@@ -11,7 +11,9 @@ import '../../../terminal/domain/entities/ssh_connection_config.dart';
 import '../../../terminal/domain/entities/terminal_mode.dart';
 import '../../../terminal/presentation/providers/terminal_display_mode_provider.dart';
 import '../../../terminal/presentation/providers/terminal_provider.dart';
+
 import '../../../terminal/presentation/screens/terminal_screen.dart';
+import '../../../terminal/presentation/widgets/view_mode_toggle.dart';
 import '../../domain/entities/session.dart';
 import '../../domain/entities/session_status.dart';
 import '../providers/session_list_controller.dart';
@@ -220,8 +222,8 @@ class _MultiSessionTerminalScreenState
 /// Combined header with tab bar and action buttons.
 ///
 /// Integrates the session tabs with close/menu buttons in a single header
-/// with a distinct background color.
-class _CombinedHeader extends StatelessWidget {
+/// with a distinct background color. Includes view mode toggle.
+class _CombinedHeader extends ConsumerWidget {
   const _CombinedHeader({
     required this.sessions,
     required this.activeSessionId,
@@ -241,7 +243,11 @@ class _CombinedHeader extends StatelessWidget {
   final VoidCallback? onDisconnect;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Check if we're in TUI mode (hide view toggle in TUI mode)
+    final displayMode = ref.watch(currentTerminalModeProvider);
+    final isInTuiMode = displayMode == TerminalMode.tui;
+
     return Container(
       height: 48,
       color: Colors.black,
@@ -264,6 +270,13 @@ class _CombinedHeader extends StatelessWidget {
               onAddTap: onAddTap,
             ),
           ),
+
+          // View mode toggle (hidden in TUI mode)
+          if (!isInTuiMode && activeSession != null)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: ViewModeCycleButton(),
+            ),
 
           // Connection status indicator
           if (activeSession != null)

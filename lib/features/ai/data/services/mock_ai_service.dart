@@ -1,15 +1,21 @@
 // @telos L1:function:lib/features/ai/data/services:mock_ai_service
 
+import 'dart:async';
 import 'dart:math';
 
+import '../../domain/entities/ai_privacy_mode.dart';
 import '../../domain/entities/ai_suggestion.dart';
+import '../../domain/services/ai_service.dart';
 
 /// Mock AI service for UI development and testing.
 ///
 /// Provides keyword-based command suggestions without actual AI processing.
 /// This allows the UI to be built and tested before the real AI gateway
 /// is implemented.
-class MockAiService {
+///
+/// Implements [AiService] interface for compatibility with the AI gateway
+/// abstraction layer.
+class MockAiService implements AiService {
   MockAiService({
     this.minDelay = const Duration(milliseconds: 500),
     this.maxDelay = const Duration(milliseconds: 1500),
@@ -22,6 +28,20 @@ class MockAiService {
   final Duration maxDelay;
 
   final _random = Random();
+
+  @override
+  String get serviceName => 'Mock AI';
+
+  @override
+  AiPrivacyMode get privacyMode => AiPrivacyMode.local;
+
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<void> dispose() async {
+    // No resources to clean up for mock service
+  }
 
   /// Command templates mapped to keywords.
   static const _commandTemplates = <String, _CommandTemplate>{
@@ -217,6 +237,7 @@ class MockAiService {
   /// Matches keywords in the input and returns an appropriate suggestion.
   /// Uses contextual grouping to prioritize more specific matches.
   /// If no keywords match, returns a generic suggestion with lower confidence.
+  @override
   Future<AiSuggestion> generateCommand(String input) async {
     // Simulate AI processing delay
     final delay = Duration(
@@ -295,6 +316,23 @@ class MockAiService {
           'I couldn\'t understand the request. Try using keywords like "list", "find", "docker", or "pods".',
       confidence: 0.30,
     );
+  }
+
+  @override
+  Stream<AiStreamEvent> generateCommandStream(String prompt) async* {
+    // Get the full suggestion first
+    final suggestion = await generateCommand(prompt);
+
+    // Simulate streaming by yielding characters one at a time
+    final command = suggestion.command;
+    for (var i = 0; i < command.length; i++) {
+      yield AiStreamToken(command[i]);
+      // Small delay between characters for streaming effect
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    // Yield the complete suggestion
+    yield AiStreamComplete(suggestion);
   }
 
   /// Customizes command based on specific input patterns.

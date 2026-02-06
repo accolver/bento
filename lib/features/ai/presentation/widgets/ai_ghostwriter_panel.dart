@@ -70,7 +70,8 @@ class _AiGhostwriterPanelState extends ConsumerState<AiGhostwriterPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final privacyMode = ref.watch(aiPrivacyModeStateProvider);
+    // Use the new aiPrivacyModeProvider that reads from the service
+    final privacyMode = ref.watch(aiPrivacyModeProvider);
     final suggestionAsync = ref.watch(aiSuggestionControllerProvider);
 
     return Container(

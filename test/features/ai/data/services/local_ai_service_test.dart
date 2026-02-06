@@ -113,7 +113,15 @@ void main() {
         final suggestion =
             await service.generateCommand('show running docker containers');
 
-        expect(suggestion.command, equals('docker ps -a'));
+        expect(suggestion.command, equals('docker ps'));
+      });
+
+      test('handles docker prune request', () async {
+        final service = createService();
+        final suggestion =
+            await service.generateCommand('remove unused docker images');
+
+        expect(suggestion.command, equals('docker image prune -a'));
       });
 
       test('handles git status request', () async {
@@ -350,8 +358,8 @@ void main() {
         final service = LocalAiService(modelPath: testModelFile.path);
 
         expect(service.contextSize, equals(2048));
-        expect(service.maxTokens, equals(256));
-        expect(service.temperature, equals(0.3));
+        expect(service.maxTokens, equals(64)); // Reduced for speed
+        expect(service.temperature, equals(0.1)); // Lower for determinism
         expect(service.nThreads, equals(4));
         expect(service.useGpu, isTrue);
       });

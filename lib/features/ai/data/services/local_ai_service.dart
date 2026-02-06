@@ -28,8 +28,8 @@ class LocalAiService implements AiService {
   LocalAiService({
     required String modelPath,
     this.contextSize = 2048,
-    this.maxTokens = 256,
-    this.temperature = 0.3,
+    this.maxTokens = 64, // Commands are short, limit for speed
+    this.temperature = 0.1, // Lower temperature for more deterministic output
     this.nThreads = 4,
     this.useGpu = true,
   }) : _modelPath = modelPath;
@@ -284,28 +284,42 @@ class LocalAiService implements AiService {
 
   /// Builds the system prompt for command generation.
   String _buildSystemPrompt() {
-    return '''You are a command-line assistant. Given a natural language request, respond with ONLY the shell command that accomplishes the task. Do not include explanations, markdown formatting, or anything other than the command itself.
+    return '''You are a shell command assistant. Output ONLY the command, nothing else.
 
 Examples:
-User: list all files
-Assistant: ls -la
+Q: list files
+A: ls -la
 
-User: show disk usage
-Assistant: df -h
+Q: disk usage
+A: df -h
 
-User: find large files
-Assistant: find . -type f -size +100M''';
+Q: remove unused docker images
+A: docker image prune -a
+
+Q: show running containers
+A: docker ps
+
+Q: git status
+A: git status
+
+Q: find large files
+A: find . -type f -size +100M
+
+Q: show memory
+A: free -h
+
+Q: restart nginx
+A: sudo systemctl restart nginx''';
   }
 
   /// Builds the full prompt with system context.
   String _buildFullPrompt(String systemPrompt, String userPrompt) {
-    // Use ChatML format which works well with most models
-    return '''<|im_start|>system
-$systemPrompt<|im_end|>
-<|im_start|>user
-$userPrompt<|im_end|>
-<|im_start|>assistant
-''';
+    // Use a simple Q/A format that's fast to process
+    // The model should output just the command after "A: "
+    return '''$systemPrompt
+
+Q: $userPrompt
+A:''';
   }
 
   /// Parses the model response into an AiSuggestion.
@@ -333,13 +347,38 @@ $userPrompt<|im_end|>
 
     return AiSuggestion(
       command: command,
-      explanation: _generateExplanation(command),
+      explanation: _generateExplanation(command, originalPrompt),
       confidence: 0.8,
     );
   }
 
   /// Generates a short human-readable explanation of what the command does.
-  String _generateExplanation(String command) {
+  ///
+  /// Uses the original user prompt to provide context-aware explanations,
+  /// falling back to command parsing if the prompt doesn't provide clarity.
+  String _generateExplanation(String command, String userPrompt) {
+    // First, try to create a concise version of the user's intent
+    final cleanPrompt = userPrompt.trim().toLowerCase();
+
+    // If the prompt is short and clear, capitalize and use it
+    if (cleanPrompt.length <= 40 && cleanPrompt.isNotEmpty) {
+      // Capitalize first letter and ensure it doesn't end with punctuation
+      var explanation = userPrompt.trim();
+      explanation = explanation[0].toUpperCase() + explanation.substring(1);
+      if (explanation.endsWith('.') ||
+          explanation.endsWith('?') ||
+          explanation.endsWith('!')) {
+        explanation = explanation.substring(0, explanation.length - 1);
+      }
+      return explanation;
+    }
+
+    // For longer prompts, fall back to command-based explanation
+    return _getCommandExplanation(command);
+  }
+
+  /// Generates an explanation based on parsing the command itself.
+  String _getCommandExplanation(String command) {
     final lower = command.toLowerCase();
     final parts = command.split(' ');
     final baseCommand = parts.isNotEmpty ? parts.first : command;
@@ -576,7 +615,7 @@ $userPrompt<|im_end|>
         // For sudo, explain the actual command
         if (parts.length > 1) {
           final sudoCommand = parts.sublist(1).join(' ');
-          return 'Run as root: ${_generateExplanation(sudoCommand)}';
+          return 'Run as root: ${_getCommandExplanation(sudoCommand)}';
         }
         return 'Run as superuser';
 
@@ -599,8 +638,8 @@ $userPrompt<|im_end|>
   /// Returns a fallback suggestion using pattern matching.
   AiSuggestion _getFallbackSuggestion(String prompt, {String? error}) {
     final command = _getFallbackCommand(prompt);
-    // Use the same explanation generator for consistent UX
-    final explanation = _generateExplanation(command);
+    // Use the prompt for explanation since user intent is clearer than parsed command
+    final explanation = _generateExplanation(command, prompt);
 
     return AiSuggestion(
       command: command,
@@ -622,7 +661,7 @@ $userPrompt<|im_end|>
     yield AiStreamComplete(
       AiSuggestion(
         command: command,
-        explanation: _generateExplanation(command),
+        explanation: _generateExplanation(command, prompt),
         confidence: 0.5,
       ),
     );
@@ -634,30 +673,67 @@ $userPrompt<|im_end|>
   String _getFallbackCommand(String prompt) {
     final lower = prompt.toLowerCase();
 
-    // Check more specific patterns first (multi-word matches)
-    if (lower.contains('docker') && lower.contains('container')) {
-      return 'docker ps -a';
-    }
+    // Docker commands (check specific patterns first)
     if (lower.contains('docker')) {
+      if (lower.contains('remove') && lower.contains('image') ||
+          lower.contains('prune') && lower.contains('image') ||
+          lower.contains('unused') && lower.contains('image') ||
+          lower.contains('clean') && lower.contains('image')) {
+        return 'docker image prune -a';
+      }
+      if (lower.contains('remove') && lower.contains('container') ||
+          lower.contains('prune') && lower.contains('container')) {
+        return 'docker container prune';
+      }
+      if (lower.contains('stop') && lower.contains('all')) {
+        return 'docker stop \$(docker ps -q)';
+      }
+      if (lower.contains('log')) {
+        return 'docker logs --tail 100';
+      }
+      if (lower.contains('image')) {
+        return 'docker images';
+      }
+      if (lower.contains('running') || lower.contains('container')) {
+        return 'docker ps';
+      }
+      // Default docker command
       return 'docker ps -a';
     }
-    if (lower.contains('git') && lower.contains('status')) {
+
+    // Git commands
+    if (lower.contains('git')) {
+      if (lower.contains('status')) return 'git status';
+      if (lower.contains('log')) return 'git log --oneline -10';
+      if (lower.contains('diff')) return 'git diff';
+      if (lower.contains('branch')) return 'git branch -a';
+      if (lower.contains('pull')) return 'git pull';
+      if (lower.contains('push')) return 'git push';
       return 'git status';
     }
-    if (lower.contains('git') && lower.contains('log')) {
-      return 'git log --oneline -10';
+
+    // Kubernetes commands
+    if (lower.contains('kubectl') ||
+        lower.contains('kubernetes') ||
+        lower.contains('k8s')) {
+      if (lower.contains('pod')) return 'kubectl get pods';
+      if (lower.contains('service')) return 'kubectl get services';
+      if (lower.contains('log')) return 'kubectl logs';
+      return 'kubectl get pods';
     }
+
+    // File operations
     if (lower.contains('find') && lower.contains('file')) {
       return 'find . -name "*.txt" -type f';
     }
-
-    // Generic patterns (check after specific ones)
     if (lower.contains('list') && lower.contains('file')) {
       return 'ls -la';
     }
     if (lower.contains('list')) {
       return 'ls -la';
     }
+
+    // System monitoring
     if (lower.contains('disk') || lower.contains('storage')) {
       return 'df -h';
     }
@@ -675,6 +751,17 @@ $userPrompt<|im_end|>
     }
     if (lower.contains('cpu') || lower.contains('system')) {
       return 'top -bn1 | head -20';
+    }
+
+    // Service management
+    if (lower.contains('restart') ||
+        lower.contains('start') ||
+        lower.contains('stop')) {
+      if (lower.contains('nginx')) return 'sudo systemctl restart nginx';
+      if (lower.contains('apache')) return 'sudo systemctl restart apache2';
+      if (lower.contains('mysql')) return 'sudo systemctl restart mysql';
+      if (lower.contains('postgres'))
+        return 'sudo systemctl restart postgresql';
     }
 
     // Default: echo the request

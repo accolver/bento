@@ -56,6 +56,18 @@ class TerminalController extends _$TerminalController {
   /// Handles output from the terminal (user keystrokes)
   void _handleTerminalOutput(String data) {
     if (_sshDataSource?.isConnected ?? false) {
+      // Debug: Log raw input data for troubleshooting keyboard issues
+      if (data.isNotEmpty) {
+        final codeUnits = data.codeUnits;
+        debugPrint(
+          'Terminal input: "${_escapeForLog(data)}" '
+          'codeUnits: $codeUnits '
+          'length: ${data.length}',
+        );
+      } else {
+        debugPrint('Terminal input: EMPTY STRING');
+      }
+
       // Transform newlines: soft keyboards may send LF (\n) but terminals
       // expect CR (\r) for Enter. Replace \n with \r for proper behavior.
       // Note: Don't replace \r\n as that's already correct for some modes.
@@ -74,6 +86,18 @@ class TerminalController extends _$TerminalController {
       }
       _sshDataSource!.writeString(transformedData);
     }
+  }
+
+  /// Escapes special characters for logging.
+  String _escapeForLog(String data) {
+    return data
+        .replaceAll('\x7f', '<DEL>')
+        .replaceAll('\x08', '<BS>')
+        .replaceAll('\r', '<CR>')
+        .replaceAll('\n', '<LF>')
+        .replaceAll('\x1b', '<ESC>')
+        .replaceAll('\x03', '<CTRL-C>')
+        .replaceAll('\t', '<TAB>');
   }
 
   /// Connects to a remote host via SSH.

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme.dart';
+import '../../data/services/local_ai_service.dart';
 import '../../domain/entities/ai_privacy_mode.dart';
 import '../providers/ai_providers.dart';
 import 'ai_command_suggestion.dart';
@@ -167,7 +168,14 @@ class _AiGhostwriterPanelState extends ConsumerState<AiGhostwriterPanel> {
 
         // Close button
         IconButton(
-          onPressed: widget.onDismiss,
+          onPressed: () async {
+            // Stop any in-progress LLM generation before closing
+            final service = ref.read(aiServiceProvider);
+            if (service is LocalAiService) {
+              await service.stopGeneration();
+            }
+            widget.onDismiss();
+          },
           icon: Icon(
             Icons.close,
             color: theme.colorScheme.onSurfaceVariant,
@@ -293,8 +301,16 @@ class _AiGhostwriterPanelState extends ConsumerState<AiGhostwriterPanel> {
             label: 'Execute command',
             hint: 'Run this command in the terminal',
             child: FilledButton.icon(
-              onPressed: () {
+              onPressed: () async {
                 HapticFeedback.mediumImpact();
+
+                // Stop any in-progress LLM generation before executing
+                // This prevents native crashes in llama.cpp
+                final service = ref.read(aiServiceProvider);
+                if (service is LocalAiService) {
+                  await service.waitForCompletion();
+                }
+
                 widget.onExecute(command);
               },
               icon: const Icon(Icons.play_arrow, size: 20),

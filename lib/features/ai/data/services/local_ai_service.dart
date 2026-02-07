@@ -137,11 +137,27 @@ class LocalAiService implements AiService {
     if (_isGenerating) {
       try {
         await _controller!.stop();
+        // Give native resources time to clean up
+        await Future.delayed(const Duration(milliseconds: 100));
       } catch (e) {
         // Ignore errors when stopping - generation might have already finished
       }
       _isGenerating = false;
     }
+  }
+
+  /// Waits for any in-progress generation to complete.
+  ///
+  /// Call this before performing actions that might conflict with
+  /// native LLM operations (like executing a command).
+  Future<void> waitForCompletion() async {
+    // If generation is in progress, wait a bit for it to stabilize
+    if (_isGenerating) {
+      // Try to stop gracefully
+      await stopGeneration();
+    }
+    // Additional delay to let native resources settle
+    await Future.delayed(const Duration(milliseconds: 50));
   }
 
   @override

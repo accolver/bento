@@ -112,10 +112,11 @@ class AiServiceFactory {
   Future<AiService> createLocalService(String modelPath) async {
     final service = LocalAiService(
       modelPath: modelPath,
+      // Use conservative settings for stability
       contextSize: 2048,
-      maxTokens: 256,
-      temperature: 0.3,
-      nThreads: 4,
+      maxTokens: 64, // Commands are short, limit for speed
+      temperature: 0.1, // Lower for deterministic output
+      nThreads: 2, // Reduce thread contention for stability
       useGpu: true,
     );
 

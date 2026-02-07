@@ -244,10 +244,19 @@ class AiPrivacyModeState extends _$AiPrivacyModeState {
 /// Watches the input provider and generates suggestions when input changes.
 /// Uses debouncing to prevent rapid-fire generation requests while typing.
 /// Automatically cancels in-flight requests when a new request is made.
+///
+/// **Concurrency Safety**: Only one generation runs at a time. New requests
+/// cancel any in-progress generation to prevent native crashes in llama.cpp.
 @riverpod
 class AiSuggestionController extends _$AiSuggestionController {
   Timer? _debounceTimer;
   String? _lastGeneratedInput;
+
+  /// Tracks if a generation is currently in progress.
+  bool _isGenerating = false;
+
+  /// The input that is currently being generated (or was requested).
+  String? _pendingInput;
 
   @override
   Future<AiSuggestion?> build() async {
@@ -286,8 +295,12 @@ class AiSuggestionController extends _$AiSuggestionController {
     if (input.trim().length < 3) {
       state = const AsyncData(null);
       _lastGeneratedInput = null;
+      _pendingInput = null;
       return;
     }
+
+    // Track what input we want to generate for
+    _pendingInput = input;
 
     // Start debounce timer
     _debounceTimer = Timer(_suggestionDebounceDuration, () {
@@ -296,6 +309,9 @@ class AiSuggestionController extends _$AiSuggestionController {
   }
 
   /// Generate suggestion for the given input.
+  ///
+  /// Only one generation runs at a time. If called while another generation
+  /// is in progress, it will stop the current one first.
   Future<void> _generate(String input) async {
     // Skip if input hasn't changed
     if (input == _lastGeneratedInput) return;
@@ -303,10 +319,17 @@ class AiSuggestionController extends _$AiSuggestionController {
     // Get the current AI service
     final service = ref.read(aiServiceProvider);
 
-    // Stop any in-progress generation for LocalAiService
-    if (service is LocalAiService) {
-      await service.stopGeneration();
+    // If already generating, stop the current generation first
+    if (_isGenerating) {
+      if (service is LocalAiService) {
+        await service.stopGeneration();
+        // Wait a bit for native resources to clean up
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
     }
+
+    // Mark as generating
+    _isGenerating = true;
 
     // Mark as loading
     state = const AsyncLoading();
@@ -315,14 +338,24 @@ class AiSuggestionController extends _$AiSuggestionController {
       _lastGeneratedInput = input;
       final suggestion = await service.generateCommand(input);
 
-      // Only update if this is still the latest request
-      if (_lastGeneratedInput == input) {
+      // Only update if this is still the latest request and no new request pending
+      if (_lastGeneratedInput == input && _pendingInput == input) {
         state = AsyncData(suggestion);
       }
     } catch (e) {
       // Only update error if this is still the latest request
-      if (_lastGeneratedInput == input) {
+      if (_lastGeneratedInput == input && _pendingInput == input) {
         state = AsyncError(e, StackTrace.current);
+      }
+    } finally {
+      _isGenerating = false;
+
+      // If there's a newer pending input, generate for it
+      if (_pendingInput != null && _pendingInput != input) {
+        final pending = _pendingInput!;
+        // Small delay to let native resources settle
+        await Future.delayed(const Duration(milliseconds: 50));
+        _generate(pending);
       }
     }
   }

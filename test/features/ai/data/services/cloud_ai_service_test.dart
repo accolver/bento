@@ -136,7 +136,8 @@ void main() {
 
         expect(result.command, equals('ls -la'));
         expect(result.confidence, equals(0.85));
-        expect(result.explanation, contains('GPT-4o Mini'));
+        // Explanation comes from parsed response or default
+        expect(result.explanation, isNotEmpty);
       });
 
       // @telos-scenario L1:...:cloud_ai_service:strips-markdown

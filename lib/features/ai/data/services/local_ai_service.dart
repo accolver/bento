@@ -224,8 +224,8 @@ class LocalAiService implements AiService {
       final response = buffer.toString().trim();
       return _parseResponse(response, prompt);
     } catch (e) {
-      // Fall back to pattern matching on error
-      return _getFallbackSuggestion(prompt, error: e.toString());
+      // Fall back on error
+      return _getFallbackSuggestion(prompt);
     } finally {
       _isGenerating = false;
     }
@@ -299,39 +299,32 @@ class LocalAiService implements AiService {
   }
 
   /// Builds the system prompt for command generation.
+  ///
+  /// The prompt asks for both a command and a short explanation.
   String _buildSystemPrompt() {
-    return '''You are a shell command assistant. Output ONLY the command, nothing else.
+    return '''You are a shell command assistant. Output a command and brief explanation.
+
+Format: COMMAND | EXPLANATION
 
 Examples:
 Q: list files
-A: ls -la
+A: ls -la | List all files with details
 
-Q: disk usage
-A: df -h
+Q: stop all docker containers
+A: docker stop \$(docker ps -q) | Stop all running containers
 
 Q: remove unused docker images
-A: docker image prune -a
-
-Q: show running containers
-A: docker ps
-
-Q: git status
-A: git status
+A: docker image prune -a | Remove all unused images
 
 Q: find large files
-A: find . -type f -size +100M
-
-Q: show memory
-A: free -h
+A: find . -type f -size +100M | Find files larger than 100MB
 
 Q: restart nginx
-A: sudo systemctl restart nginx''';
+A: sudo systemctl restart nginx | Restart the nginx service''';
   }
 
   /// Builds the full prompt with system context.
   String _buildFullPrompt(String systemPrompt, String userPrompt) {
-    // Use a simple Q/A format that's fast to process
-    // The model should output just the command after "A: "
     return '''$systemPrompt
 
 Q: $userPrompt
@@ -339,449 +332,75 @@ A:''';
   }
 
   /// Parses the model response into an AiSuggestion.
+  ///
+  /// Expects format: COMMAND | EXPLANATION
   AiSuggestion _parseResponse(String response, String originalPrompt) {
-    // Clean up the response
-    var command = response.trim();
+    var text = response.trim();
 
     // Remove common prefixes the model might add
-    command = command
+    text = text
         .replaceAll(RegExp(r'^(Command:|Shell:|Bash:|>|\$)\s*'), '')
         .replaceAll(RegExp(r'^```(bash|sh|shell)?\n?'), '')
         .replaceAll(RegExp(r'\n?```$'), '')
         .trim();
 
     // Take only the first line if multiple lines
-    final lines = command.split('\n');
-    command = lines.first.trim();
+    final lines = text.split('\n');
+    text = lines.first.trim();
+
+    // Parse command and explanation from "COMMAND | EXPLANATION" format
+    String command;
+    String explanation;
+
+    if (text.contains('|')) {
+      final parts = text.split('|');
+      command = parts[0].trim();
+      explanation = parts.length > 1 ? parts.sublist(1).join('|').trim() : '';
+    } else {
+      // No pipe separator - treat whole thing as command
+      command = text;
+      explanation = '';
+    }
+
+    // Clean up command
+    command = command
+        .replaceAll(RegExp(r'^(Command:|Shell:|Bash:|>|\$)\s*'), '')
+        .trim();
 
     // If the command is empty or looks invalid, fall back
     if (command.isEmpty || command.length > 500) {
-      return _getFallbackSuggestion(originalPrompt).copyWith(
-        explanation: 'Model response was unclear. Using pattern matching.',
-      );
+      return _getFallbackSuggestion(originalPrompt);
     }
 
-    return AiSuggestion(
-      command: command,
-      explanation: _generateExplanation(command, originalPrompt),
-      confidence: 0.8,
-    );
-  }
-
-  /// Generates a short human-readable explanation of what the command does.
-  ///
-  /// Uses the original user prompt to provide context-aware explanations,
-  /// falling back to command parsing if the prompt doesn't provide clarity.
-  String _generateExplanation(String command, String userPrompt) {
-    // First, try to create a concise version of the user's intent
-    final cleanPrompt = userPrompt.trim().toLowerCase();
-
-    // If the prompt is short and clear, capitalize and use it
-    if (cleanPrompt.length <= 40 && cleanPrompt.isNotEmpty) {
-      // Capitalize first letter and ensure it doesn't end with punctuation
-      var explanation = userPrompt.trim();
-      explanation = explanation[0].toUpperCase() + explanation.substring(1);
-      if (explanation.endsWith('.') ||
-          explanation.endsWith('?') ||
-          explanation.endsWith('!')) {
-        explanation = explanation.substring(0, explanation.length - 1);
-      }
-      return explanation;
+    // If no explanation was provided, generate a simple one
+    if (explanation.isEmpty) {
+      explanation = 'Execute command';
     }
-
-    // For longer prompts, fall back to command-based explanation
-    return _getCommandExplanation(command);
-  }
-
-  /// Generates an explanation based on parsing the command itself.
-  String _getCommandExplanation(String command) {
-    final lower = command.toLowerCase();
-    final parts = command.split(' ');
-    final baseCommand = parts.isNotEmpty ? parts.first : command;
-
-    // Common command explanations
-    switch (baseCommand) {
-      case 'ls':
-        if (command.contains('-la') || command.contains('-l')) {
-          return 'List files with details';
-        }
-        if (command.contains('-a')) {
-          return 'List all files including hidden';
-        }
-        return 'List directory contents';
-
-      case 'cd':
-        final dir = parts.length > 1 ? parts[1] : '~';
-        return 'Change to $dir directory';
-
-      case 'pwd':
-        return 'Show current directory';
-
-      case 'cat':
-        return 'Display file contents';
-
-      case 'grep':
-        return 'Search for pattern in files';
-
-      case 'find':
-        return 'Search for files';
-
-      case 'mkdir':
-        return 'Create new directory';
-
-      case 'rm':
-        if (command.contains('-rf') || command.contains('-r')) {
-          return 'Remove files/directories recursively';
-        }
-        return 'Remove files';
-
-      case 'cp':
-        return 'Copy files';
-
-      case 'mv':
-        return 'Move or rename files';
-
-      case 'chmod':
-        return 'Change file permissions';
-
-      case 'chown':
-        return 'Change file ownership';
-
-      case 'df':
-        return 'Show disk space usage';
-
-      case 'du':
-        return 'Show directory size';
-
-      case 'free':
-        return 'Show memory usage';
-
-      case 'top':
-      case 'htop':
-        return 'Show running processes';
-
-      case 'ps':
-        return 'List processes';
-
-      case 'kill':
-      case 'killall':
-        return 'Terminate process';
-
-      case 'systemctl':
-        if (lower.contains('status')) return 'Check service status';
-        if (lower.contains('start')) return 'Start service';
-        if (lower.contains('stop')) return 'Stop service';
-        if (lower.contains('restart')) return 'Restart service';
-        return 'Manage system service';
-
-      case 'docker':
-        if (lower.contains('ps')) return 'List Docker containers';
-        if (lower.contains('images')) return 'List Docker images';
-        if (lower.contains('run')) return 'Run Docker container';
-        if (lower.contains('stop')) return 'Stop Docker container';
-        if (lower.contains('logs')) return 'Show container logs';
-        return 'Docker command';
-
-      case 'kubectl':
-        if (lower.contains('get pods')) return 'List Kubernetes pods';
-        if (lower.contains('get services')) return 'List Kubernetes services';
-        if (lower.contains('logs')) return 'Show pod logs';
-        if (lower.contains('describe')) return 'Describe Kubernetes resource';
-        return 'Kubernetes command';
-
-      case 'git':
-        if (lower.contains('status')) return 'Show git status';
-        if (lower.contains('log')) return 'Show commit history';
-        if (lower.contains('diff')) return 'Show changes';
-        if (lower.contains('add')) return 'Stage changes';
-        if (lower.contains('commit')) return 'Commit changes';
-        if (lower.contains('push')) return 'Push to remote';
-        if (lower.contains('pull')) return 'Pull from remote';
-        if (lower.contains('clone')) return 'Clone repository';
-        if (lower.contains('branch')) return 'Manage branches';
-        if (lower.contains('checkout')) return 'Switch branch';
-        return 'Git command';
-
-      case 'ssh':
-        return 'Connect via SSH';
-
-      case 'scp':
-        return 'Copy files over SSH';
-
-      case 'rsync':
-        return 'Sync files';
-
-      case 'curl':
-      case 'wget':
-        return 'Download from URL';
-
-      case 'tar':
-        if (lower.contains('xzf') || lower.contains('xvf')) {
-          return 'Extract archive';
-        }
-        if (lower.contains('czf') || lower.contains('cvf')) {
-          return 'Create archive';
-        }
-        return 'Archive command';
-
-      case 'zip':
-        return 'Create zip archive';
-
-      case 'unzip':
-        return 'Extract zip archive';
-
-      case 'apt':
-      case 'apt-get':
-        if (lower.contains('install')) return 'Install package';
-        if (lower.contains('update')) return 'Update package list';
-        if (lower.contains('upgrade')) return 'Upgrade packages';
-        if (lower.contains('remove')) return 'Remove package';
-        return 'Package manager command';
-
-      case 'yum':
-      case 'dnf':
-        if (lower.contains('install')) return 'Install package';
-        if (lower.contains('update')) return 'Update packages';
-        if (lower.contains('remove')) return 'Remove package';
-        return 'Package manager command';
-
-      case 'pip':
-      case 'pip3':
-        if (lower.contains('install')) return 'Install Python package';
-        if (lower.contains('list')) return 'List Python packages';
-        return 'Python package manager';
-
-      case 'npm':
-        if (lower.contains('install')) return 'Install Node packages';
-        if (lower.contains('run')) return 'Run npm script';
-        if (lower.contains('start')) return 'Start Node app';
-        return 'Node package manager';
-
-      case 'yarn':
-        if (lower.contains('add')) return 'Add Node package';
-        if (lower.contains('install')) return 'Install dependencies';
-        return 'Yarn package manager';
-
-      case 'netstat':
-        return 'Show network connections';
-
-      case 'ss':
-        return 'Show socket statistics';
-
-      case 'ip':
-        if (lower.contains('addr')) return 'Show IP addresses';
-        if (lower.contains('route')) return 'Show routing table';
-        return 'Network configuration';
-
-      case 'ping':
-        return 'Test network connectivity';
-
-      case 'traceroute':
-      case 'tracepath':
-        return 'Trace network path';
-
-      case 'nslookup':
-      case 'dig':
-        return 'DNS lookup';
-
-      case 'tail':
-        if (command.contains('-f')) return 'Follow file changes';
-        return 'Show end of file';
-
-      case 'head':
-        return 'Show beginning of file';
-
-      case 'less':
-      case 'more':
-        return 'View file with paging';
-
-      case 'nano':
-      case 'vim':
-      case 'vi':
-        return 'Edit file';
-
-      case 'echo':
-        return 'Print text';
-
-      case 'whoami':
-        return 'Show current user';
-
-      case 'hostname':
-        return 'Show hostname';
-
-      case 'uname':
-        return 'Show system info';
-
-      case 'date':
-        return 'Show date/time';
-
-      case 'uptime':
-        return 'Show system uptime';
-
-      case 'history':
-        return 'Show command history';
-
-      case 'clear':
-        return 'Clear terminal';
-
-      case 'exit':
-        return 'Exit shell';
-
-      case 'sudo':
-        // For sudo, explain the actual command
-        if (parts.length > 1) {
-          final sudoCommand = parts.sublist(1).join(' ');
-          return 'Run as root: ${_getCommandExplanation(sudoCommand)}';
-        }
-        return 'Run as superuser';
-
-      default:
-        // For pipes and complex commands
-        if (command.contains('|')) {
-          return 'Multi-step pipeline command';
-        }
-        if (command.contains('&&')) {
-          return 'Run multiple commands';
-        }
-        if (command.contains('>')) {
-          return 'Command with output redirection';
-        }
-        // Generic fallback
-        return 'Execute $baseCommand';
-    }
-  }
-
-  /// Returns a fallback suggestion using pattern matching.
-  AiSuggestion _getFallbackSuggestion(String prompt, {String? error}) {
-    final command = _getFallbackCommand(prompt);
-    // Use the prompt for explanation since user intent is clearer than parsed command
-    final explanation = _generateExplanation(command, prompt);
 
     return AiSuggestion(
       command: command,
       explanation: explanation,
-      confidence: 0.5,
+      confidence: 0.8,
+    );
+  }
+
+  /// Returns a fallback suggestion when LLM is unavailable.
+  ///
+  /// Returns an error message prompting the user to download a model.
+  AiSuggestion _getFallbackSuggestion(String prompt) {
+    return AiSuggestion(
+      command: '# AI model not available',
+      explanation: 'Download an AI model in settings to generate commands',
+      confidence: 0.0,
     );
   }
 
   /// Returns a fallback stream for unsupported platforms.
   Stream<AiStreamEvent> _getFallbackStream(String prompt) async* {
-    final command = _getFallbackCommand(prompt);
-    final words = command.split(' ');
-
-    for (final word in words) {
-      yield AiStreamToken('$word ');
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-
-    yield AiStreamComplete(
-      AiSuggestion(
-        command: command,
-        explanation: _generateExplanation(command, prompt),
-        confidence: 0.5,
-      ),
+    yield const AiStreamError(
+      'Local AI not available on this platform. Download an AI model in settings.',
+      code: 'unsupported_platform',
     );
-  }
-
-  /// Gets a fallback command using simple pattern matching.
-  ///
-  /// This provides basic functionality when local inference is unavailable.
-  String _getFallbackCommand(String prompt) {
-    final lower = prompt.toLowerCase();
-
-    // Docker commands (check specific patterns first)
-    if (lower.contains('docker')) {
-      if (lower.contains('remove') && lower.contains('image') ||
-          lower.contains('prune') && lower.contains('image') ||
-          lower.contains('unused') && lower.contains('image') ||
-          lower.contains('clean') && lower.contains('image')) {
-        return 'docker image prune -a';
-      }
-      if (lower.contains('remove') && lower.contains('container') ||
-          lower.contains('prune') && lower.contains('container')) {
-        return 'docker container prune';
-      }
-      if (lower.contains('stop') && lower.contains('all')) {
-        return 'docker stop \$(docker ps -q)';
-      }
-      if (lower.contains('log')) {
-        return 'docker logs --tail 100';
-      }
-      if (lower.contains('image')) {
-        return 'docker images';
-      }
-      if (lower.contains('running') || lower.contains('container')) {
-        return 'docker ps';
-      }
-      // Default docker command
-      return 'docker ps -a';
-    }
-
-    // Git commands
-    if (lower.contains('git')) {
-      if (lower.contains('status')) return 'git status';
-      if (lower.contains('log')) return 'git log --oneline -10';
-      if (lower.contains('diff')) return 'git diff';
-      if (lower.contains('branch')) return 'git branch -a';
-      if (lower.contains('pull')) return 'git pull';
-      if (lower.contains('push')) return 'git push';
-      return 'git status';
-    }
-
-    // Kubernetes commands
-    if (lower.contains('kubectl') ||
-        lower.contains('kubernetes') ||
-        lower.contains('k8s')) {
-      if (lower.contains('pod')) return 'kubectl get pods';
-      if (lower.contains('service')) return 'kubectl get services';
-      if (lower.contains('log')) return 'kubectl logs';
-      return 'kubectl get pods';
-    }
-
-    // File operations
-    if (lower.contains('find') && lower.contains('file')) {
-      return 'find . -name "*.txt" -type f';
-    }
-    if (lower.contains('list') && lower.contains('file')) {
-      return 'ls -la';
-    }
-    if (lower.contains('list')) {
-      return 'ls -la';
-    }
-
-    // System monitoring
-    if (lower.contains('disk') || lower.contains('storage')) {
-      return 'df -h';
-    }
-    if (lower.contains('memory') || lower.contains('ram')) {
-      return 'free -h';
-    }
-    if (lower.contains('process')) {
-      return 'ps aux';
-    }
-    if (lower.contains('network') || lower.contains('ip')) {
-      return 'ip addr show';
-    }
-    if (lower.contains('port') || lower.contains('listening')) {
-      return 'netstat -tlnp';
-    }
-    if (lower.contains('cpu') || lower.contains('system')) {
-      return 'top -bn1 | head -20';
-    }
-
-    // Service management
-    if (lower.contains('restart') ||
-        lower.contains('start') ||
-        lower.contains('stop')) {
-      if (lower.contains('nginx')) return 'sudo systemctl restart nginx';
-      if (lower.contains('apache')) return 'sudo systemctl restart apache2';
-      if (lower.contains('mysql')) return 'sudo systemctl restart mysql';
-      if (lower.contains('postgres'))
-        return 'sudo systemctl restart postgresql';
-    }
-
-    // Default: echo the request
-    return 'echo "Request: $prompt"';
   }
 
   /// Extracts a display name from the model path.

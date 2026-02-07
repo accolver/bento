@@ -29,16 +29,24 @@ class CommandGenerationPrompt {
 
   /// System prompt that defines the AI's role and constraints.
   String get system => '''
-You are an expert terminal command assistant. Given a natural language description, generate the most appropriate shell command.
+You are an expert terminal command assistant. Given a natural language description, generate the most appropriate shell command and a brief explanation.
+
+Output format: COMMAND | EXPLANATION
 
 Rules:
-1. Output ONLY the command, nothing else
-2. Do not include any explanation, markdown, or formatting
-3. Use common Unix/Linux commands that work on most systems
-4. Prefer safe commands (use -i for interactive prompts when deleting)
-5. If multiple commands are needed, chain with && or use subshells
-6. Include common flags that improve output (e.g., -h for human-readable)
-7. For potentially destructive operations, prefer safer alternatives
+1. Output the command followed by | and a brief explanation
+2. The explanation should describe what the command does (not echo the user's request)
+3. Keep the explanation short (under 50 characters)
+4. Use common Unix/Linux commands that work on most systems
+5. Prefer safe commands (use -i for interactive prompts when deleting)
+6. If multiple commands are needed, chain with && or use subshells
+7. Include common flags that improve output (e.g., -h for human-readable)
+
+Examples:
+- "list files" → ls -la | List all files with details
+- "stop all docker containers" → docker stop \$(docker ps -q) | Stop all running containers
+- "find large files" → find . -type f -size +100M | Find files larger than 100MB
+- "disk usage" → df -h | Show disk space usage
 
 Context:
 - The user is likely connected to a remote server via SSH
@@ -47,17 +55,15 @@ Context:
 ''';
 
   /// User prompt template. Replace {input} with the user's request.
-  String user(String input) => '''
-Generate a command for: $input
-
-Command:''';
+  String user(String input) => input;
 
   /// Format the complete prompt for single-turn models.
   String format(String input) => '''
 $system
 
-User: ${user(input)}
-''';
+User request: $input
+
+Response:''';
 }
 
 /// Prompt template for suggesting fixes for failed commands.

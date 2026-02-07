@@ -1,6 +1,7 @@
 // @telos L1:function:lib/features/connections/data/repositories:saved_connections_repository
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:fpdart/fpdart.dart';
 
@@ -25,6 +26,7 @@ class SavedConnectionsRepository {
   /// Gets all saved connections, ordered by last used (most recent first).
   Future<Either<Failure, List<SavedConnection>>> getAll() async {
     try {
+      debugPrint('SavedConnectionsRepository.getAll: fetching connections');
       final query = _database.select(_database.savedConnections)
         ..orderBy([
           (t) => OrderingTerm.desc(t.isFavorite),
@@ -33,9 +35,13 @@ class SavedConnectionsRepository {
         ]);
 
       final rows = await query.get();
+      debugPrint(
+          'SavedConnectionsRepository.getAll: found ${rows.length} connections');
       final connections = rows.map(_rowToEntity).toList();
       return Right(connections);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('SavedConnectionsRepository.getAll: error=$e');
+      debugPrint('SavedConnectionsRepository.getAll: stackTrace=$stackTrace');
       return Left(DatabaseFailure(message: 'Failed to load connections: $e'));
     }
   }
@@ -72,6 +78,8 @@ class SavedConnectionsRepository {
     int? existingId,
   }) async {
     try {
+      debugPrint(
+          'SavedConnectionsRepository.save: name=$name host=$host port=$port username=$username authType=$authType');
       final credentialKey =
           'bento_ssh_cred_${existingId ?? DateTime.now().millisecondsSinceEpoch}';
 
@@ -124,16 +132,24 @@ class SavedConnectionsRepository {
         ));
       }
 
+      debugPrint('SavedConnectionsRepository.save: inserted id=$id');
       final result = await getById(id);
       return result.fold(
         Left.new,
-        (connection) => connection != null
-            ? Right(connection)
-            : const Left(
-                DatabaseFailure(message: 'Failed to retrieve saved connection'),
-              ),
+        (connection) {
+          debugPrint(
+              'SavedConnectionsRepository.save: success connection=${connection?.name}');
+          return connection != null
+              ? Right(connection)
+              : const Left(
+                  DatabaseFailure(
+                      message: 'Failed to retrieve saved connection'),
+                );
+        },
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('SavedConnectionsRepository.save: error=$e');
+      debugPrint('SavedConnectionsRepository.save: stackTrace=$stackTrace');
       return Left(DatabaseFailure(message: 'Failed to save connection: $e'));
     }
   }

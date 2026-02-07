@@ -82,99 +82,15 @@ void main() {
     group('generateCommand', () {
       // Note: Tests run on macOS/Linux, so these test the fallback path
       // On Android, the actual LLM inference would be used instead
+      // Since we removed pattern matching, non-Android returns a fallback message
 
-      test('returns fallback command for "list files" request', () async {
+      test('returns fallback suggestion on non-Android platforms', () async {
         final service = createService();
         final suggestion = await service.generateCommand('list all files');
 
-        // Should return a fallback command via pattern matching
-        expect(suggestion.command, equals('ls -la'));
-        expect(suggestion.confidence, equals(0.5));
-        // Explanation should describe what the command does
-        expect(suggestion.explanation, contains('List'));
-      });
-
-      test('handles disk usage request', () async {
-        final service = createService();
-        final suggestion = await service.generateCommand('show disk usage');
-
-        expect(suggestion.command, equals('df -h'));
-      });
-
-      test('handles memory request', () async {
-        final service = createService();
-        final suggestion = await service.generateCommand('show memory usage');
-
-        expect(suggestion.command, equals('free -h'));
-      });
-
-      test('handles docker request', () async {
-        final service = createService();
-        final suggestion =
-            await service.generateCommand('show running docker containers');
-
-        expect(suggestion.command, equals('docker ps'));
-      });
-
-      test('handles docker prune request', () async {
-        final service = createService();
-        final suggestion =
-            await service.generateCommand('remove unused docker images');
-
-        expect(suggestion.command, equals('docker image prune -a'));
-      });
-
-      test('handles git status request', () async {
-        final service = createService();
-        final suggestion = await service.generateCommand('git status');
-
-        expect(suggestion.command, equals('git status'));
-      });
-
-      test('handles git log request', () async {
-        final service = createService();
-        final suggestion = await service.generateCommand('show git log');
-
-        expect(suggestion.command, equals('git log --oneline -10'));
-      });
-
-      test('handles process listing request', () async {
-        final service = createService();
-        final suggestion =
-            await service.generateCommand('show running process');
-
-        expect(suggestion.command, equals('ps aux'));
-      });
-
-      test('handles network request', () async {
-        final service = createService();
-        final suggestion = await service.generateCommand('show network info');
-
-        expect(suggestion.command, equals('ip addr show'));
-      });
-
-      test('handles port listing request', () async {
-        final service = createService();
-        final suggestion =
-            await service.generateCommand('which ports are open');
-
-        expect(suggestion.command, equals('netstat -tlnp'));
-      });
-
-      test('handles CPU/system request', () async {
-        final service = createService();
-        final suggestion = await service.generateCommand('show cpu usage');
-
-        expect(suggestion.command, equals('top -bn1 | head -20'));
-      });
-
-      test('returns echo for unrecognized input', () async {
-        final service = createService();
-        final suggestion =
-            await service.generateCommand('do something random xyz');
-
-        expect(suggestion.command, startsWith('echo'));
-        expect(suggestion.command, contains('do something random xyz'));
+        // On non-Android platforms, returns fallback message since LLM not available
+        expect(suggestion.confidence, equals(0.0));
+        expect(suggestion.explanation, contains('model'));
       });
 
       test('throws AiServiceException when model file not found', () async {
@@ -195,31 +111,17 @@ void main() {
 
     // @telos-scenario L1:function:lib/features/ai/data/services:local_ai_service:streaming
     group('generateCommandStream', () {
-      test('streams tokens and completes with suggestion', () async {
+      test('yields error on non-Android platforms', () async {
         final service = createService();
         final events =
             await service.generateCommandStream('list files').toList();
 
-        // Should have token events + 1 complete event
-        expect(events.length, greaterThan(1));
-        expect(events.last, isA<AiStreamComplete>());
+        // On non-Android platforms, yields an error since LLM not available
+        expect(events.length, equals(1));
+        expect(events.first, isA<AiStreamError>());
 
-        final complete = events.last as AiStreamComplete;
-        expect(complete.suggestion.command, equals('ls -la'));
-      });
-
-      test('token events contain parts of the command', () async {
-        final service = createService();
-        final tokens = <String>[];
-
-        await for (final event in service.generateCommandStream('list files')) {
-          if (event is AiStreamToken) {
-            tokens.add(event.token);
-          }
-        }
-
-        // Should have received tokens that form "ls -la "
-        expect(tokens.join().trim(), equals('ls -la'));
+        final error = events.first as AiStreamError;
+        expect(error.message, contains('not available'));
       });
 
       test('yields error event when model file not found', () async {

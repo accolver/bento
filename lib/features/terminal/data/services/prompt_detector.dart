@@ -33,8 +33,21 @@ class PromptDetector {
   final List<RegExp> _customPatterns;
 
   /// Regex to match ANSI escape sequences.
+  ///
+  /// Handles:
+  /// - CSI sequences: \x1B[...m (colors, cursor movement, etc.)
+  /// - OSC sequences: \x1B]...(\x07|\x1B\\) (window titles, shell integration)
+  /// - Simple escapes: \x1B followed by single character
   static final _ansiEscapeRegex = RegExp(
-    r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])',
+    // CSI sequences: ESC [ ... final_byte
+    r'\x1B\[[0-?]*[ -/]*[@-~]'
+    // OSC sequences: ESC ] ... (BEL or ST)
+    // These are used by Starship, iTerm2, etc. for shell integration
+    r'|\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)?'
+    // APC, DCS, PM, SOS sequences: ESC (_, P, ^, X) ... ST
+    r'|\x1B[_P\^X][^\x1B]*(?:\x1B\\)?'
+    // Simple escape sequences: ESC followed by single char
+    r'|\x1B[@-Z\\-_]',
   );
 
   /// Common shell prompt patterns.

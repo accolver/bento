@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/constants/block_colors.dart';
+import '../../data/services/ansi_stripper.dart';
 import '../../domain/entities/block.dart';
 import '../../domain/entities/block_status.dart';
 import '../providers/block_provider.dart';
@@ -92,7 +93,7 @@ class BlockWidget extends ConsumerWidget {
   }
 
   void _copyOutput(BuildContext context) {
-    final cleanOutput = stripAnsiCodes(block.output);
+    final cleanOutput = AnsiStripper.strip(block.output);
     Clipboard.setData(ClipboardData(text: cleanOutput));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -103,7 +104,7 @@ class BlockWidget extends ConsumerWidget {
   }
 
   void _copyAll(BuildContext context) {
-    final cleanOutput = stripAnsiCodes(block.output);
+    final cleanOutput = AnsiStripper.strip(block.output);
     final formatted = '\$ ${block.command}\n$cleanOutput';
     Clipboard.setData(ClipboardData(text: formatted));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -305,6 +306,8 @@ class _BlockHeader extends StatelessWidget {
                 block.command,
                 style: TextStyle(
                   fontFamily: 'JetBrainsMonoNF',
+                  // Fallback for emoji which are in different Unicode blocks
+                  fontFamilyFallback: const ['Noto Color Emoji'],
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: isDark ? Colors.white : Colors.black87,
@@ -475,6 +478,8 @@ class _TuiSessionContent extends StatelessWidget {
                   'TUI Session',
                   style: TextStyle(
                     fontFamily: 'JetBrainsMonoNF',
+                    // Fallback for emoji which are in different Unicode blocks
+                    fontFamilyFallback: const ['Noto Color Emoji'],
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: isDark
@@ -610,7 +615,7 @@ class _BlockContent extends StatelessWidget {
     }
 
     // Strip ANSI codes for clean text display
-    final cleanOutput = stripAnsiCodes(block.output);
+    final cleanOutput = AnsiStripper.strip(block.output);
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
@@ -633,6 +638,8 @@ class _BlockContent extends StatelessWidget {
                 cleanOutput,
                 style: TextStyle(
                   fontFamily: 'JetBrainsMonoNF',
+                  // Fallback for emoji which are in different Unicode blocks
+                  fontFamilyFallback: const ['Noto Color Emoji'],
                   fontSize: 12,
                   height: 1.3,
                   color: isDark ? Colors.white70 : Colors.black87,
@@ -795,14 +802,4 @@ class _ActionButton extends StatelessWidget {
     }
     return button;
   }
-}
-
-/// Regex to match ANSI escape sequences.
-final _ansiEscapeRegex = RegExp(
-  r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])',
-);
-
-/// Strips ANSI escape codes from text.
-String stripAnsiCodes(String text) {
-  return text.replaceAll(_ansiEscapeRegex, '');
 }

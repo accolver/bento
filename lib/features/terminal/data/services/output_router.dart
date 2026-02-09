@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import '../../domain/entities/block_status.dart';
 import '../../presentation/providers/block_provider.dart';
+import 'ansi_stripper.dart';
 import 'prompt_detector.dart';
 import 'tui_mode_detector.dart';
 
@@ -288,11 +289,15 @@ class OutputRouter {
 
     if (_outputBuffer.isEmpty) return;
 
-    final output = _outputBuffer.toString();
+    final rawOutput = _outputBuffer.toString();
     _outputBuffer.clear();
 
     if (_blockController.hasActiveBlock) {
-      _blockController.appendOutput(output);
+      // Strip ANSI escape codes before storing in block
+      // This removes colors, OSC sequences (shell integration), etc.
+      // The terminal view shows the styled output; blocks show clean text
+      final cleanOutput = AnsiStripper.strip(rawOutput);
+      _blockController.appendOutput(cleanOutput);
     }
   }
 

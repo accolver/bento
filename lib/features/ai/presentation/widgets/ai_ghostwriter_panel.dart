@@ -8,6 +8,7 @@ import '../../../../app/theme.dart';
 import '../../data/services/local_ai_service.dart';
 import '../../domain/entities/ai_privacy_mode.dart';
 import '../providers/ai_providers.dart';
+import '../screens/ai_setup_wizard.dart';
 import 'ai_command_suggestion.dart';
 
 /// Bottom sheet panel for AI Ghostwriter natural language input.
@@ -161,8 +162,8 @@ class _AiGhostwriterPanelState extends ConsumerState<AiGhostwriterPanel> {
         ),
         const Spacer(),
 
-        // Privacy indicator
-        _PrivacyBadge(mode: privacyMode),
+        // Privacy indicator (tappable to change AI mode)
+        _PrivacyBadge(mode: privacyMode, onDismissPanel: widget.onDismiss),
 
         const SizedBox(width: 8),
 
@@ -332,51 +333,83 @@ class _AiGhostwriterPanelState extends ConsumerState<AiGhostwriterPanel> {
 }
 
 /// Privacy mode indicator badge.
-class _PrivacyBadge extends StatelessWidget {
-  const _PrivacyBadge({required this.mode});
+///
+/// Tappable to open AI settings and reconfigure the AI mode.
+class _PrivacyBadge extends ConsumerWidget {
+  const _PrivacyBadge({required this.mode, required this.onDismissPanel});
 
   final AiPrivacyMode mode;
+  final VoidCallback onDismissPanel;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isLocal = mode == AiPrivacyMode.local;
 
     return Semantics(
       label: isLocal
-          ? 'Privacy mode: Local processing'
-          : 'Privacy mode: Cloud processing',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: isLocal
-              ? theme.aiHighConfidenceColor.withValues(alpha: 0.1)
-              : Colors.blue.withValues(alpha: 0.1),
+          ? 'Privacy mode: Local processing. Tap to change.'
+          : 'Privacy mode: Cloud processing. Tap to change.',
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () async {
+            // Dismiss the ghostwriter panel first
+            onDismissPanel();
+
+            // Wait for panel to close, then show setup wizard
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+
+            if (context.mounted) {
+              await AiSetupWizard.show(context);
+
+              // Refresh the AI service after reconfiguration
+              ref.invalidate(aiServiceProvider);
+            }
+          },
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isLocal
-                ? theme.aiHighConfidenceColor.withValues(alpha: 0.3)
-                : Colors.blue.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isLocal ? Icons.security : Icons.cloud,
-              size: 12,
-              color: isLocal ? theme.aiHighConfidenceColor : Colors.blue,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              isLocal ? 'Local' : 'Cloud',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: isLocal ? theme.aiHighConfidenceColor : Colors.blue,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isLocal
+                  ? theme.aiHighConfidenceColor.withValues(alpha: 0.1)
+                  : Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isLocal
+                    ? theme.aiHighConfidenceColor.withValues(alpha: 0.3)
+                    : Colors.blue.withValues(alpha: 0.3),
               ),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isLocal ? Icons.security : Icons.cloud,
+                  size: 12,
+                  color: isLocal ? theme.aiHighConfidenceColor : Colors.blue,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  isLocal ? 'Local' : 'Cloud',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isLocal ? theme.aiHighConfidenceColor : Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.chevron_right,
+                  size: 12,
+                  color: isLocal
+                      ? theme.aiHighConfidenceColor.withValues(alpha: 0.7)
+                      : Colors.blue.withValues(alpha: 0.7),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -2,12 +2,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../domain/entities/ai_config.dart';
+import '../../providers/ai_providers.dart';
 
 /// Step for entering the OpenRouter API key.
-class CloudApiKeyStep extends StatefulWidget {
+class CloudApiKeyStep extends ConsumerStatefulWidget {
   const CloudApiKeyStep({
     super.key,
     required this.provider,
@@ -18,15 +20,37 @@ class CloudApiKeyStep extends StatefulWidget {
   final void Function(String apiKey) onComplete;
 
   @override
-  State<CloudApiKeyStep> createState() => _CloudApiKeyStepState();
+  ConsumerState<CloudApiKeyStep> createState() => _CloudApiKeyStepState();
 }
 
-class _CloudApiKeyStepState extends State<CloudApiKeyStep> {
+class _CloudApiKeyStepState extends ConsumerState<CloudApiKeyStep> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _obscureText = true;
   bool _isValidating = false;
+  bool _isLoading = true;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingKey();
+  }
+
+  /// Load existing API key if available, so user doesn't have to re-enter.
+  Future<void> _loadExistingKey() async {
+    final configNotifier = ref.read(aiConfigStateProvider.notifier);
+    final existingKey = await configNotifier.getApiKey();
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        if (existingKey != null && existingKey.isNotEmpty) {
+          _controller.text = existingKey;
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -115,6 +139,10 @@ class _CloudApiKeyStepState extends State<CloudApiKeyStep> {
     final theme = Theme.of(context);
     final hasValue = _controller.text.isNotEmpty;
 
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -122,14 +150,16 @@ class _CloudApiKeyStepState extends State<CloudApiKeyStep> {
         children: [
           const SizedBox(height: 16),
           Text(
-            'Enter Your API Key',
+            hasValue ? 'Update Your API Key' : 'Enter Your API Key',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Get a key from openrouter.ai',
+            hasValue
+                ? 'Your existing key is pre-filled. You can update it or continue with the current key.'
+                : 'Get a key from openrouter.ai',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

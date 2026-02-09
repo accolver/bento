@@ -1,11 +1,13 @@
 // @telos L2:contract:lib/features/ai/presentation/widgets/setup_steps:mode_selection_step
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/entities/ai_config.dart';
+import '../../providers/ai_providers.dart';
 
 /// First step of the AI setup wizard - choose AI mode.
-class ModeSelectionStep extends StatelessWidget {
+class ModeSelectionStep extends ConsumerWidget {
   const ModeSelectionStep({
     super.key,
     required this.onModeSelected,
@@ -16,8 +18,11 @@ class ModeSelectionStep extends StatelessWidget {
   final VoidCallback? onSkip;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final configAsync = ref.watch(aiConfigStateProvider);
+    final currentMode = configAsync.valueOrNull?.mode ?? AiMode.unconfigured;
+    final isReconfiguring = currentMode != AiMode.unconfigured;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -27,14 +32,16 @@ class ModeSelectionStep extends StatelessWidget {
 
           // Title
           Text(
-            'Set up AI Assistant',
+            isReconfiguring ? 'Change AI Mode' : 'Set up AI Assistant',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Bento can help you write commands using AI',
+            isReconfiguring
+                ? 'Your current settings will be preserved'
+                : 'Bento can help you write commands using AI',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -54,6 +61,7 @@ class ModeSelectionStep extends StatelessWidget {
                     description:
                         'Run AI on your device. Your data never leaves your phone.',
                     isPrivate: true,
+                    isSelected: currentMode == AiMode.local,
                     onTap: () => onModeSelected(AiMode.local),
                   ),
                   const SizedBox(height: 12),
@@ -64,6 +72,7 @@ class ModeSelectionStep extends StatelessWidget {
                     description:
                         'Use advanced models via OpenRouter. Sends prompts to external servers.',
                     isPrivate: false,
+                    isSelected: currentMode == AiMode.cloud,
                     onTap: () => onModeSelected(AiMode.cloud),
                   ),
                   const SizedBox(height: 12),
@@ -74,6 +83,7 @@ class ModeSelectionStep extends StatelessWidget {
                     description:
                         'Use Ollama on servers you SSH into. Data stays on your infrastructure.',
                     isPrivate: true,
+                    isSelected: currentMode == AiMode.remote,
                     onTap: () => onModeSelected(AiMode.remote),
                   ),
                 ],
@@ -81,10 +91,10 @@ class ModeSelectionStep extends StatelessWidget {
             ),
           ),
 
-          // Skip option
+          // Skip/Cancel option
           TextButton(
             onPressed: () => onModeSelected(AiMode.unconfigured),
-            child: const Text('Skip for now'),
+            child: Text(isReconfiguring ? 'Cancel' : 'Skip for now'),
           ),
           const SizedBox(height: 16),
         ],
@@ -100,6 +110,7 @@ class _ModeCard extends StatelessWidget {
     required this.subtitle,
     required this.description,
     required this.isPrivate,
+    required this.isSelected,
     required this.onTap,
   });
 
@@ -108,6 +119,7 @@ class _ModeCard extends StatelessWidget {
   final String subtitle;
   final String description;
   final bool isPrivate;
+  final bool isSelected;
   final VoidCallback onTap;
 
   @override
@@ -119,7 +131,10 @@ class _ModeCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: theme.colorScheme.outlineVariant,
+          color: isSelected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant,
+          width: isSelected ? 2 : 1,
         ),
       ),
       child: InkWell(
@@ -191,10 +206,16 @@ class _ModeCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              if (isSelected)
+                Icon(
+                  Icons.check_circle,
+                  color: theme.colorScheme.primary,
+                )
+              else
+                Icon(
+                  Icons.chevron_right,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
             ],
           ),
         ),

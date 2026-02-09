@@ -156,6 +156,7 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
         ref.read(sessionListControllerProvider.notifier).createSession(
               config: config,
               name: sessionName,
+              savedConnection: savedConnection,
             );
 
     // Connect via the shared terminal controller (for now)

@@ -40,6 +40,11 @@ class Session with _$Session {
 
     /// Whether a command is currently executing.
     @Default(false) bool hasRunningCommand,
+
+    /// ID of the saved connection this session was created from, if any.
+    ///
+    /// Used for persisting per-connection preferences like view mode.
+    int? savedConnectionId,
   }) = _Session;
 
   /// Returns the display name for the session.

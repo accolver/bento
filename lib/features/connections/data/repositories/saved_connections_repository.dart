@@ -239,6 +239,24 @@ class SavedConnectionsRepository {
     }
   }
 
+  /// Updates the preferred view mode for a connection.
+  Future<Either<Failure, void>> updateViewModePreference(
+    int id,
+    String viewMode,
+  ) async {
+    try {
+      await (_database.update(_database.savedConnections)
+            ..where((t) => t.id.equals(id)))
+          .write(SavedConnectionsCompanion(
+        preferredViewMode: Value(viewMode),
+      ));
+      return const Right(null);
+    } catch (e) {
+      return Left(DatabaseFailure(
+          message: 'Failed to update view mode preference: $e'));
+    }
+  }
+
   SavedConnection _rowToEntity(SavedConnectionEntry row) {
     return SavedConnection(
       id: row.id,
@@ -256,6 +274,7 @@ class SavedConnectionsRepository {
       useCount: row.useCount,
       isFavorite: row.isFavorite,
       sortOrder: row.sortOrder,
+      preferredViewMode: row.preferredViewMode ?? 'split',
     );
   }
 }

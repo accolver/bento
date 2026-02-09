@@ -56,6 +56,9 @@ class SavedConnection with _$SavedConnection {
 
     /// Sort order for manual ordering
     @Default(0) int sortOrder,
+
+    /// Preferred view mode for this connection (split, fullTerminal, fullBlocks)
+    @Default('split') String preferredViewMode,
   }) = _SavedConnection;
 
   factory SavedConnection.fromJson(Map<String, dynamic> json) =>

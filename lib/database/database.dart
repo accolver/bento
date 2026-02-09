@@ -84,6 +84,11 @@ class BentoDatabase extends _$BentoDatabase {
               await customStatement('''
                 ALTER TABLE blocks ADD COLUMN is_tui_session INTEGER NOT NULL DEFAULT 0
               ''');
+            case 5:
+              // v5: Add preferred_view_mode column to saved_connections table
+              await customStatement('''
+                ALTER TABLE saved_connections ADD COLUMN preferred_view_mode TEXT DEFAULT 'split'
+              ''');
           }
         }
       },

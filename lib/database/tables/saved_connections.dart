@@ -54,4 +54,8 @@ class SavedConnections extends Table {
 
   /// Sort order for manual ordering
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// Preferred view mode for this connection (split, fullTerminal, fullBlocks)
+  TextColumn get preferredViewMode =>
+      text().withDefault(const Constant('split')).nullable()();
 }

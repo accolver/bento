@@ -15,10 +15,18 @@ class DownloadProgress {
   const DownloadProgress({
     required this.receivedBytes,
     required this.totalBytes,
+    this.isResuming = false,
+    this.resumedFromBytes = 0,
   });
 
   final int receivedBytes;
   final int totalBytes;
+
+  /// Whether this download was resumed from a partial file.
+  final bool isResuming;
+
+  /// The byte offset from which the download was resumed.
+  final int resumedFromBytes;
 
   /// Progress as a value between 0.0 and 1.0.
   double get progress => totalBytes > 0 ? receivedBytes / totalBytes : 0.0;
@@ -34,6 +42,9 @@ class DownloadProgress {
 
   /// Formatted as "1.2 GB / 2.0 GB".
   String get formattedProgress => '$formattedReceived / $formattedTotal';
+
+  /// Human-readable size of the resumed portion.
+  String get formattedResumedFrom => _formatBytes(resumedFromBytes);
 
   static String _formatBytes(int bytes) {
     if (bytes >= 1024 * 1024 * 1024) {
@@ -120,30 +131,98 @@ class ModelDownloadService {
     _cancelToken = CancelToken();
 
     String? localPath;
+    int resumeFromBytes = 0;
+    bool isResuming = false;
 
     try {
       localPath = await _getModelPath(model.id);
+      final partialPath = '$localPath.partial';
+      final partialFile = File(partialPath);
+
+      // Check for existing partial download
+      if (await partialFile.exists()) {
+        resumeFromBytes = await partialFile.length();
+        if (resumeFromBytes > 0) {
+          isResuming = true;
+          debugPrint(
+              '[ModelDownload] Found partial download: ${DownloadProgress._formatBytes(resumeFromBytes)}');
+        }
+      }
 
       debugPrint(
           '[ModelDownload] Starting download from: ${model.downloadUrl}');
       debugPrint('[ModelDownload] Saving to: $localPath');
+      if (isResuming) {
+        debugPrint('[ModelDownload] Resuming from byte: $resumeFromBytes');
+      }
 
-      await _dio.download(
+      // Send initial progress if resuming
+      if (isResuming && !controller.isClosed) {
+        controller.add(DownloadProgress(
+          receivedBytes: resumeFromBytes,
+          totalBytes: model.sizeBytes,
+          isResuming: true,
+          resumedFromBytes: resumeFromBytes,
+        ));
+      }
+
+      // Set up options for resume
+      final options = Options(
+        headers:
+            resumeFromBytes > 0 ? {'Range': 'bytes=$resumeFromBytes-'} : null,
+      );
+
+      // Download to partial file first
+      final response = await _dio.download(
         model.downloadUrl,
-        localPath,
+        partialPath,
         cancelToken: _cancelToken,
-        deleteOnError: false, // Enable resume capability
+        deleteOnError: false, // Keep partial file for resume
+        options: options,
         onReceiveProgress: (received, total) {
           if (!controller.isClosed) {
+            // When resuming, 'received' is bytes received in this session
+            // We need to add resumeFromBytes to get total received
+            final totalReceived = resumeFromBytes + received;
+
+            // 'total' from server is remaining bytes when using Range header
+            // So actual total is resumeFromBytes + total (or use model size)
+            final actualTotal = resumeFromBytes + (total > 0 ? total : 0);
+            final displayTotal =
+                actualTotal > 0 ? actualTotal : model.sizeBytes;
+
             controller.add(
               DownloadProgress(
-                receivedBytes: received,
-                totalBytes: total > 0 ? total : model.sizeBytes,
+                receivedBytes: totalReceived,
+                totalBytes: displayTotal,
+                isResuming: isResuming,
+                resumedFromBytes: resumeFromBytes,
               ),
             );
           }
         },
       );
+
+      // Check if server supported range request
+      final statusCode = response.statusCode;
+      if (isResuming && statusCode == 200) {
+        // Server returned full file (doesn't support resume)
+        // The partial file was overwritten, that's fine
+        debugPrint(
+            '[ModelDownload] Server does not support resume, downloaded full file');
+      } else if (statusCode == 206) {
+        // Partial content - resume worked
+        debugPrint('[ModelDownload] Resume successful (206 Partial Content)');
+      }
+
+      // Move partial file to final location
+      if (await partialFile.exists()) {
+        final finalFile = File(localPath);
+        if (await finalFile.exists()) {
+          await finalFile.delete();
+        }
+        await partialFile.rename(localPath);
+      }
 
       debugPrint('[ModelDownload] Download complete!');
 
@@ -157,7 +236,7 @@ class ModelDownloadService {
     } on DioException catch (e) {
       debugPrint('[ModelDownload] DioException: ${e.type} - ${e.message}');
       debugPrint('[ModelDownload] Error details: ${e.error}');
-      final exception = _handleDioException(e, localPath);
+      final exception = _handleDioException(e, localPath, isResuming);
       if (!controller.isClosed) {
         controller.addError(exception);
       }
@@ -180,12 +259,16 @@ class ModelDownloadService {
 
   /// Converts DioException to ModelDownloadException.
   ModelDownloadException _handleDioException(
-      DioException e, String? localPath) {
+    DioException e,
+    String? localPath, [
+    bool isResuming = false,
+  ]) {
     // Handle cancellation
     if (e.type == DioExceptionType.cancel) {
       // Clean up partial file on cancel (fire and forget)
-      if (localPath != null) {
-        _deleteFile(localPath);
+      // Note: We keep the .partial file so user can resume later
+      if (localPath != null && !isResuming) {
+        _deleteFile('$localPath.partial');
       }
       return const ModelDownloadException(
         message: 'Download cancelled',
@@ -265,17 +348,48 @@ class ModelDownloadService {
     return _getModelPath(modelId);
   }
 
-  /// Checks if a model has been downloaded.
+  /// Checks if a model has been fully downloaded.
   Future<bool> isModelDownloaded(String modelId) async {
     final path = await _getModelPath(modelId);
     final file = File(path);
     return file.existsSync();
   }
 
-  /// Deletes a downloaded model.
+  /// Checks if a partial download exists for this model.
+  Future<bool> hasPartialDownload(String modelId) async {
+    final path = await _getModelPath(modelId);
+    final partialFile = File('$path.partial');
+    return partialFile.existsSync();
+  }
+
+  /// Gets information about a partial download.
+  ///
+  /// Returns null if no partial download exists.
+  Future<PartialDownloadInfo?> getPartialDownloadInfo(String modelId) async {
+    final path = await _getModelPath(modelId);
+    final partialFile = File('$path.partial');
+    if (await partialFile.exists()) {
+      final size = await partialFile.length();
+      return PartialDownloadInfo(
+        modelId: modelId,
+        downloadedBytes: size,
+        partialFilePath: partialFile.path,
+      );
+    }
+    return null;
+  }
+
+  /// Deletes a downloaded model and any partial downloads.
   Future<void> deleteModel(String modelId) async {
     final path = await _getModelPath(modelId);
     await _deleteFile(path);
+    await _deleteFile('$path.partial');
+  }
+
+  /// Deletes only the partial download for a model.
+  Future<void> deletePartialDownload(String modelId) async {
+    final path = await _getModelPath(modelId);
+    await _deleteFile('$path.partial');
   }
 
   /// Gets the size of a downloaded model file.
@@ -322,6 +436,22 @@ class ModelDownloadService {
       await file.delete();
     }
   }
+}
+
+/// Information about a partial download that can be resumed.
+class PartialDownloadInfo {
+  const PartialDownloadInfo({
+    required this.modelId,
+    required this.downloadedBytes,
+    required this.partialFilePath,
+  });
+
+  final String modelId;
+  final int downloadedBytes;
+  final String partialFilePath;
+
+  /// Human-readable size of the partial download.
+  String get formattedSize => DownloadProgress._formatBytes(downloadedBytes);
 }
 
 /// Error codes for model download failures.

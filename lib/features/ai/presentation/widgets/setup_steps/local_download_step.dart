@@ -28,6 +28,7 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
   DownloadProgress? _progress;
   String? _error;
   bool _isDownloading = false;
+  bool _hasPartialDownload = false;
 
   @override
   void initState() {
@@ -50,7 +51,23 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
       return;
     }
 
-    // Model not downloaded, start download
+    // Check for partial download
+    final partialInfo =
+        await downloadService.getPartialDownloadInfo(widget.model.id);
+    if (partialInfo != null && mounted) {
+      setState(() {
+        _hasPartialDownload = true;
+        // Show initial progress from partial download
+        _progress = DownloadProgress(
+          receivedBytes: partialInfo.downloadedBytes,
+          totalBytes: widget.model.sizeBytes,
+          isResuming: true,
+          resumedFromBytes: partialInfo.downloadedBytes,
+        );
+      });
+    }
+
+    // Model not downloaded, start download (will resume if partial exists)
     _startDownload();
   }
 
@@ -89,6 +106,8 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
       }
     } on ModelDownloadException catch (e) {
       if (!mounted) return;
+      // Check if we have a partial download saved
+      await _checkForPartialDownload();
       setState(() {
         _error = e.message;
         _isDownloading = false;
@@ -96,6 +115,8 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
     } catch (e) {
       // Catch any unexpected errors (including stream errors)
       if (!mounted) return;
+      // Check if we have a partial download saved
+      await _checkForPartialDownload();
       setState(() {
         _error = _formatError(e);
         _isDownloading = false;
@@ -117,6 +138,24 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
       return 'Connection timed out. Please try again.';
     }
     return 'Download failed: $errorStr';
+  }
+
+  /// Check if a partial download exists and update state.
+  Future<void> _checkForPartialDownload() async {
+    final downloadService = ref.read(modelDownloadServiceProvider);
+    final partialInfo =
+        await downloadService.getPartialDownloadInfo(widget.model.id);
+    if (partialInfo != null && mounted) {
+      setState(() {
+        _hasPartialDownload = true;
+        _progress = DownloadProgress(
+          receivedBytes: partialInfo.downloadedBytes,
+          totalBytes: widget.model.sizeBytes,
+          isResuming: true,
+          resumedFromBytes: partialInfo.downloadedBytes,
+        );
+      });
+    }
   }
 
   void _cancelDownload() {
@@ -164,7 +203,9 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
             ),
             const SizedBox(height: 32),
             Text(
-              'Downloading ${widget.model.name}',
+              _progress?.isResuming == true
+                  ? 'Resuming ${widget.model.name}'
+                  : 'Downloading ${widget.model.name}',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -176,6 +217,16 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (_progress?.isResuming == true &&
+                _progress!.resumedFromBytes > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Resumed from ${_progress!.formattedResumedFrom}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
           ],
 
           // Error state
@@ -201,11 +252,20 @@ class _LocalDownloadStepState extends ConsumerState<LocalDownloadStep> {
               ),
               textAlign: TextAlign.center,
             ),
+            if (_hasPartialDownload && _progress != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Progress saved: ${_progress!.formattedReceived}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _startDownload,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(_hasPartialDownload ? 'Resume Download' : 'Retry'),
             ),
           ],
 

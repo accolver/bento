@@ -198,22 +198,28 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   /// Shows the AI Ghostwriter bottom sheet panel.
   ///
   /// If AI is not configured, shows the setup wizard first.
-  void _showAiPanel(BuildContext context) {
-    // Check if AI is configured
+  Future<void> _showAiPanel(BuildContext context) async {
+    // Check if AI is configured - await the async provider
     final configAsync = ref.read(aiConfigStateProvider);
-    final config = configAsync.valueOrNull ?? AiConfig.unconfigured();
+
+    // If still loading, wait for it to complete
+    final AiConfig config;
+    if (configAsync.isLoading || configAsync.hasError) {
+      // Force a fresh read and wait for it
+      config = await ref.read(aiConfigStateProvider.future);
+    } else {
+      config = configAsync.valueOrNull ?? AiConfig.unconfigured();
+    }
 
     if (!config.isConfigured) {
       // Show setup wizard first
-      AiSetupWizard.show(context).then((_) {
-        // After wizard closes, check if now configured
-        final newConfigAsync = ref.read(aiConfigStateProvider);
-        final newConfig = newConfigAsync.valueOrNull ?? AiConfig.unconfigured();
-        if (newConfig.isConfigured && mounted) {
-          // Now show the AI panel
-          _showAiPanelDirect(context);
-        }
-      });
+      await AiSetupWizard.show(context);
+      // After wizard closes, check if now configured
+      final newConfig = await ref.read(aiConfigStateProvider.future);
+      if (newConfig.isConfigured && mounted) {
+        // Now show the AI panel
+        _showAiPanelDirect(context);
+      }
       return;
     }
 

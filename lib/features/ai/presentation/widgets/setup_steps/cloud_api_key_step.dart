@@ -44,8 +44,17 @@ class _CloudApiKeyStepState extends State<CloudApiKeyStep> {
 
   Future<void> _openOpenRouter() async {
     final url = Uri.parse('https://openrouter.ai/keys');
-    if (await canLaunchUrl(url)) {
+    try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
+    } on Exception {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Could not open URL. Please visit openrouter.ai/keys'),
+          ),
+        );
+      }
     }
   }
 

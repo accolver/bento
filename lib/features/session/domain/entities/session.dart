@@ -50,7 +50,39 @@ class Session with _$Session {
   /// Returns the display name for the session.
   ///
   /// If name is empty, falls back to the host from connection config.
-  String get displayName => name.isEmpty ? connectionConfig.host : name;
+  /// For long hostnames (e.g., laptop.ostrich-teeth.ts.net), only the first
+  /// segment is shown to keep tabs compact.
+  String get displayName {
+    final baseName = name.isEmpty ? connectionConfig.host : name;
+    return _extractShortName(baseName);
+  }
+
+  /// Extracts a short display name from a full name or host.
+  ///
+  /// - "alancolver@laptop.ostrich-teeth.ts.net" => "laptop"
+  /// - "laptop.ostrich-teeth.ts.net" => "laptop"
+  /// - "My Server" => "My Server" (unchanged)
+  /// - "192.168.1.1" => "192.168.1.1" (unchanged, IP address)
+  String _extractShortName(String fullName) {
+    // If it contains @, take the part after @ (the host)
+    final host = fullName.contains('@') ? fullName.split('@').last : fullName;
+
+    // If it looks like a domain name (contains dots but not an IP address),
+    // take just the first segment
+    if (host.contains('.') && !_isIpAddress(host)) {
+      return host.split('.').first;
+    }
+
+    return host;
+  }
+
+  /// Returns true if the string looks like an IP address.
+  bool _isIpAddress(String host) {
+    // Simple check: if all segments are numeric, it's likely an IP
+    final segments = host.split('.');
+    if (segments.length != 4) return false;
+    return segments.every((s) => int.tryParse(s) != null);
+  }
 
   /// Returns true if this session configuration is valid.
   ///

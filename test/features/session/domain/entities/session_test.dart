@@ -363,7 +363,7 @@ void main() {
         expect(session.displayName, equals('My Server'));
       });
 
-      test('returns host from config if name is empty', () {
+      test('returns short hostname from config if name is empty', () {
         final session = Session(
           id: 'session-1',
           name: '',
@@ -372,7 +372,39 @@ void main() {
           lastAccessedAt: testTime,
         );
 
-        expect(session.displayName, equals('test.example.com'));
+        // displayName extracts just the first segment of the hostname
+        expect(session.displayName, equals('test'));
+      });
+
+      test('preserves IP addresses unchanged', () {
+        final ipConfig = SSHConnectionConfig(
+          host: '192.168.1.100',
+          authMethod: SSHAuthMethod.password(
+            username: 'user',
+            password: 'pass',
+          ),
+        );
+        final session = Session(
+          id: 'session-1',
+          name: '',
+          connectionConfig: ipConfig,
+          createdAt: testTime,
+          lastAccessedAt: testTime,
+        );
+
+        expect(session.displayName, equals('192.168.1.100'));
+      });
+
+      test('extracts hostname from user@host format', () {
+        final session = Session(
+          id: 'session-1',
+          name: 'alan@laptop.domain.com',
+          connectionConfig: testConfig,
+          createdAt: testTime,
+          lastAccessedAt: testTime,
+        );
+
+        expect(session.displayName, equals('laptop'));
       });
     });
   });

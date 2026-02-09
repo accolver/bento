@@ -6,8 +6,24 @@
 flutter = "latest"
 
 [env]
-# Default device for deployment (Pixel 9 Pro wireless)
-BENTO_DEVICE = "adb-4C091FDAP0032A-QXeCd8._adb-tls-connect._tcp"
+# Device IDs for Pixel 9 Pro
+BENTO_DEVICE_WIRELESS = "adb-4C091FDAP0032A-QXeCd8._adb-tls-connect._tcp"
+BENTO_DEVICE_WIRED = "4C091FDAP0032A"
+
+# =============================================================================
+# Device Selection Helper
+# =============================================================================
+
+# Helper script to get available device (wireless preferred, wired fallback)
+[tasks."_device"]
+description = "Get available device ID (internal helper)"
+run = '''
+if flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS"; then
+  echo "$BENTO_DEVICE_WIRELESS"
+else
+  echo "$BENTO_DEVICE_WIRED"
+fi
+'''
 
 # =============================================================================
 # Build Tasks
@@ -35,27 +51,47 @@ run = "flutter build appbundle --release"
 alias = "i"
 description = "Install debug APK to connected device"
 depends = ["build"]
-run = "flutter install --debug -d $BENTO_DEVICE"
+run = '''
+DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+echo "Using device: $DEVICE"
+flutter install --debug -d "$DEVICE"
+'''
 
 [tasks."install:release"]
 alias = "ir"
 description = "Install release APK to connected device"
 depends = ["build:release"]
-run = "flutter install --release -d $BENTO_DEVICE"
+run = '''
+DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+echo "Using device: $DEVICE"
+flutter install --release -d "$DEVICE"
+'''
 
 [tasks.run]
 alias = "r"
 description = "Run app on connected device with hot reload"
-run = "flutter run -d $BENTO_DEVICE"
+run = '''
+DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+echo "Using device: $DEVICE"
+flutter run -d "$DEVICE"
+'''
 
 [tasks."run:release"]
 description = "Run release build on device"
-run = "flutter run --release -d $BENTO_DEVICE"
+run = '''
+DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+echo "Using device: $DEVICE"
+flutter run --release -d "$DEVICE"
+'''
 
 [tasks.hot]
 alias = "h"
 description = "Run with hot reload (same as run)"
-run = "flutter run -d $BENTO_DEVICE"
+run = '''
+DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+echo "Using device: $DEVICE"
+flutter run -d "$DEVICE"
+'''
 
 # =============================================================================
 # Test Tasks
@@ -144,15 +180,24 @@ run = "flutter devices"
 
 [tasks.logs]
 description = "Show device logs (filtered for Bento)"
-run = "adb -s $BENTO_DEVICE logcat | grep -E '(flutter|bento|Llama)'"
+run = '''
+DEVICE=$(adb devices | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+adb -s "$DEVICE" logcat | grep -E '(flutter|bento|Llama)'
+'''
 
 [tasks."logs:all"]
 description = "Show all device logs"
-run = "adb -s $BENTO_DEVICE logcat"
+run = '''
+DEVICE=$(adb devices | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+adb -s "$DEVICE" logcat
+'''
 
 [tasks."logs:clear"]
 description = "Clear device logs"
-run = "adb -s $BENTO_DEVICE logcat -c"
+run = '''
+DEVICE=$(adb devices | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+adb -s "$DEVICE" logcat -c
+'''
 
 # =============================================================================
 # ADB Wireless Tasks
@@ -230,7 +275,9 @@ description = "Full dev setup: deps, generate, run"
 run = '''
 flutter pub get
 flutter pub run build_runner build --delete-conflicting-outputs
-flutter run -d $BENTO_DEVICE
+DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+echo "Using device: $DEVICE"
+flutter run -d "$DEVICE"
 '''
 
 [tasks.ci]
@@ -252,11 +299,15 @@ depends = ["clean", "install"]
 [tasks."model:list"]
 description = "List downloaded AI models"
 run = '''
+DEVICE=$(adb devices | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
 echo "Downloaded models in app data:"
-adb -s $BENTO_DEVICE shell ls -lh /data/data/com.example.bento/app_flutter/bento/models/ 2>/dev/null || echo "No models downloaded yet"
+adb -s "$DEVICE" shell ls -lh /data/data/com.example.bento/app_flutter/bento/models/ 2>/dev/null || echo "No models downloaded yet"
 '''
 
 [tasks."model:clear"]
 description = "Clear downloaded AI models from device"
 confirm = "This will delete all downloaded AI models. Continue?"
-run = "adb -s $BENTO_DEVICE shell rm -rf /data/data/com.example.bento/app_flutter/bento/models/"
+run = '''
+DEVICE=$(adb devices | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+adb -s "$DEVICE" shell rm -rf /data/data/com.example.bento/app_flutter/bento/models/
+'''

@@ -109,13 +109,17 @@ class AiServiceFactory {
   ///
   /// Uses flutter_llama for on-device inference with llama.cpp backend.
   /// Note: Local AI is experimental and may not work on all devices.
+  ///
+  /// Memory optimization: We use a small context size (512 tokens) to reduce
+  /// RAM usage. This is sufficient for command generation (typically <100 tokens).
   Future<AiService> createLocalService(String modelPath) async {
     final service = LocalAiService(
       modelPath: modelPath,
-      contextSize: 2048,
-      maxTokens: 128, // Commands are short but need some room
+      // Small context to minimize RAM usage - commands are short
+      contextSize: 512,
+      maxTokens: 64, // Commands are short
       temperature: 0.3, // Lower for deterministic output
-      nThreads: 4,
+      nThreads: 2, // Fewer threads = less memory pressure
       useGpu: false, // Disabled due to compatibility issues on some devices
     );
 

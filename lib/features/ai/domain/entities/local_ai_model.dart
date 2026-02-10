@@ -80,61 +80,53 @@ class LocalAiModel with _$LocalAiModel {
 /// These are curated GGUF models from HuggingFace that work well
 /// with llama_flutter_android and are appropriate for mobile devices.
 ///
+/// Models are ordered by memory requirements (smallest first) to maximize
+/// device compatibility. Smaller models need less RAM to load.
+///
 /// Note: We use HuggingFace direct downloads because Ollama registry blobs
 /// may have compatibility issues with some llama.cpp versions.
 const List<LocalAiModel> availableLocalModels = [
-  // Qwen2.5 0.5B - small, fast, good quality
-  LocalAiModel(
-    id: 'qwen2.5-0.5b',
-    name: 'Qwen2.5 0.5B',
-    description: 'Small and fast, good for commands',
-    ollamaLibrary: 'qwen2.5',
-    ollamaTag: '0.5b-instruct-q4_k_m',
-    // Direct HuggingFace download - more compatible
-    ollamaBlobDigest:
-        'hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_k_m.gguf',
-    sizeBytes: 397000000, // ~397 MB
-    qualityRating: 3,
-    isRecommended: true,
-  ),
-
-  // SmolLM2 135M - ultra tiny
+  // SmolLM2 135M - ultra tiny, best compatibility
+  // ~145 MB file, needs ~400 MB RAM to run
   LocalAiModel(
     id: 'smollm2-135m',
     name: 'SmolLM2 135M',
-    description: 'Ultra-compact, very fast',
+    description: 'Smallest model, best device compatibility',
     ollamaLibrary: 'smollm2',
     ollamaTag: '135m-instruct-q8_0',
     ollamaBlobDigest:
         'hf:HuggingFaceTB/SmolLM2-135M-Instruct-GGUF/smollm2-135m-instruct-q8_0.gguf',
     sizeBytes: 145000000, // ~145 MB
     qualityRating: 2,
+    isRecommended: true,
+  ),
+
+  // Qwen2.5 0.5B - good quality, moderate size
+  // ~397 MB file, needs ~1.2 GB RAM to run
+  LocalAiModel(
+    id: 'qwen2.5-0.5b',
+    name: 'Qwen2.5 0.5B',
+    description: 'Better quality, needs more RAM',
+    ollamaLibrary: 'qwen2.5',
+    ollamaTag: '0.5b-instruct-q4_k_m',
+    ollamaBlobDigest:
+        'hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    sizeBytes: 397000000, // ~397 MB
+    qualityRating: 3,
   ),
 
   // TinyLlama 1.1B - classic small model
+  // ~669 MB file, needs ~2 GB RAM to run
   LocalAiModel(
     id: 'tinyllama-1.1b',
     name: 'TinyLlama 1.1B',
-    description: 'Proven small model, good balance',
+    description: 'Good quality, needs 2GB+ RAM',
     ollamaLibrary: 'tinyllama',
     ollamaTag: '1.1b-chat-q4_k_m',
     ollamaBlobDigest:
         'hf:TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
     sizeBytes: 669000000, // ~669 MB
     qualityRating: 3,
-  ),
-
-  // Phi-3.5 Mini - high quality
-  LocalAiModel(
-    id: 'phi3.5-mini',
-    name: 'Phi-3.5 Mini',
-    description: 'Best quality, needs more RAM',
-    ollamaLibrary: 'phi3.5',
-    ollamaTag: 'mini-instruct-q4_k_m',
-    ollamaBlobDigest:
-        'hf:bartowski/Phi-3.5-mini-instruct-GGUF/Phi-3.5-mini-instruct-Q4_K_M.gguf',
-    sizeBytes: 2390000000, // ~2.4 GB
-    qualityRating: 5,
   ),
 ];
 

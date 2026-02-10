@@ -27,11 +27,11 @@ import '../../domain/services/ai_service.dart';
 class LocalAiService implements AiService {
   LocalAiService({
     required String modelPath,
-    this.contextSize = 2048,
+    this.contextSize = 512, // Small context to minimize RAM usage
     this.maxTokens = 64, // Commands are short, limit for speed
     this.temperature = 0.1, // Lower temperature for more deterministic output
-    this.nThreads = 4,
-    this.useGpu = true,
+    this.nThreads = 2, // Fewer threads = less memory pressure
+    this.useGpu = false, // Disabled for compatibility
   }) : _modelPath = modelPath;
 
   final String _modelPath;

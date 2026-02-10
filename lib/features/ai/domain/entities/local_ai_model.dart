@@ -94,8 +94,9 @@ const List<LocalAiModel> availableLocalModels = [
     description: 'Smallest model, best device compatibility',
     ollamaLibrary: 'smollm2',
     ollamaTag: '135m-instruct-q8_0',
+    // Using bartowski's public repo (HuggingFaceTB requires auth)
     ollamaBlobDigest:
-        'hf:HuggingFaceTB/SmolLM2-135M-Instruct-GGUF/smollm2-135m-instruct-q8_0.gguf',
+        'hf:bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q8_0.gguf',
     sizeBytes: 145000000, // ~145 MB
     qualityRating: 2,
     isRecommended: true,

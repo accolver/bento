@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../../domain/entities/ai_privacy_mode.dart';
@@ -313,29 +314,46 @@ class LocalAiService implements AiService {
 
   @override
   Future<String> summarizeOutput(String command, String output) async {
+    debugPrint('[LocalAiService] summarizeOutput called');
+    debugPrint('[LocalAiService] Model path: $_modelPath');
+
     // Verify model exists
     final file = File(_modelPath);
     if (!await file.exists()) {
+      debugPrint('[LocalAiService] Model file not found!');
       throw AiServiceException(
         'Model file not found: $_modelPath',
         code: 'model_not_found',
       );
     }
+    debugPrint('[LocalAiService] Model file exists');
 
-    // On unsupported platforms, return fallback
+    // On unsupported platforms, throw an error
     if (!_isPlatformSupported) {
-      return 'Summary not available on this platform.';
+      debugPrint(
+          '[LocalAiService] Platform not supported: ${Platform.operatingSystem}');
+      throw AiServiceException(
+        'Local AI not available on ${Platform.operatingSystem}',
+        code: 'unsupported_platform',
+      );
     }
+    debugPrint('[LocalAiService] Platform supported');
 
     // Stop any in-progress generation first
     await stopGeneration();
+    debugPrint('[LocalAiService] Stopped previous generation');
 
     try {
       _isGenerating = true;
+      debugPrint('[LocalAiService] Loading model...');
       await _ensureModelLoaded();
+      debugPrint(
+          '[LocalAiService] Model loaded, isModelLoaded=$_isModelLoaded');
 
       // Clear context before generation
+      debugPrint('[LocalAiService] Clearing context...');
       await _controller!.clearContext();
+      debugPrint('[LocalAiService] Context cleared');
 
       // Truncate output if too long (keep first 500 chars for context)
       final truncatedOutput =
@@ -348,6 +366,9 @@ Command: $command
 Output: $truncatedOutput
 
 Summary:''';
+
+      debugPrint('[LocalAiService] Starting generation...');
+      debugPrint('[LocalAiService] Prompt length: ${prompt.length}');
 
       // Collect all tokens
       final buffer = StringBuffer();
@@ -367,11 +388,14 @@ Summary:''';
           buffer.write(token);
         },
         onDone: () {
+          debugPrint(
+              '[LocalAiService] Generation complete, tokens: ${buffer.length}');
           if (!completer.isCompleted) {
             completer.complete();
           }
         },
         onError: (Object error) {
+          debugPrint('[LocalAiService] Generation error: $error');
           if (!completer.isCompleted) {
             completer.completeError(error);
           }
@@ -382,6 +406,7 @@ Summary:''';
       await subscription.cancel();
 
       final response = buffer.toString().trim();
+      debugPrint('[LocalAiService] Raw response: $response');
 
       // Clean up the response
       var summary = response
@@ -395,9 +420,16 @@ Summary:''';
         summary = '${sentences.take(2).join('. ')}.';
       }
 
+      debugPrint('[LocalAiService] Final summary: $summary');
       return summary.isEmpty ? 'No summary available.' : summary;
-    } catch (e) {
-      return 'Failed to generate summary.';
+    } catch (e, stackTrace) {
+      debugPrint('[LocalAiService] Exception during summarization: $e');
+      debugPrint('[LocalAiService] Stack trace: $stackTrace');
+      // Re-throw so the UI can show the actual error
+      throw AiServiceException(
+        'Summarization failed: $e',
+        code: 'summarization_error',
+      );
     } finally {
       _isGenerating = false;
     }

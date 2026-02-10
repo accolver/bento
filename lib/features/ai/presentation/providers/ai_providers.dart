@@ -144,10 +144,19 @@ AiServiceFactory aiServiceFactory(Ref ref) {
 /// Automatically recreates the service when configuration changes.
 ///
 /// The service is disposed when the provider is disposed or recreated.
-@riverpod
+/// This provider is kept alive to prevent disposal during async operations.
+@Riverpod(keepAlive: true)
 class AiServiceController extends _$AiServiceController {
+  AiService? _currentService;
+
   @override
   Future<AiService> build() async {
+    // Dispose previous service if exists
+    if (_currentService != null) {
+      await _currentService!.dispose();
+      _currentService = null;
+    }
+
     final factory = ref.watch(aiServiceFactoryProvider);
     final configRepository = ref.watch(aiConfigRepositoryProvider);
 
@@ -160,8 +169,13 @@ class AiServiceController extends _$AiServiceController {
       configRepository: configRepository,
     );
 
-    // Dispose service when provider is disposed
-    ref.onDispose(service.dispose);
+    _currentService = service;
+
+    // Register cleanup - this is safe now since provider is keepAlive
+    ref.onDispose(() {
+      _currentService?.dispose();
+      _currentService = null;
+    });
 
     return service;
   }

@@ -56,6 +56,14 @@ abstract class AiService {
   /// For remote: close connections
   /// For unconfigured: no-op
   Future<void> dispose();
+
+  /// Summarize command output for quick understanding.
+  ///
+  /// [command] - The command that was executed.
+  /// [output] - The output from the command (ANSI-stripped).
+  /// Returns a concise summary of what the output shows.
+  /// Throws [AiServiceException] if summarization fails.
+  Future<String> summarizeOutput(String command, String output);
 }
 
 /// Events emitted during streaming generation.

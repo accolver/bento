@@ -34,6 +34,11 @@ class UnconfiguredAiService implements AiService {
   Stream<AiStreamEvent> generateCommandStream(String prompt) async* {
     yield const AiStreamError('AI is not configured. Please set up AI first.');
   }
+
+  @override
+  Future<String> summarizeOutput(String command, String output) async {
+    throw const AiNotConfiguredException();
+  }
 }
 
 /// Exception thrown when AI service is used but not configured.

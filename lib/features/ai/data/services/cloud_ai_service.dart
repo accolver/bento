@@ -93,6 +93,61 @@ class CloudAiService implements AiService {
   }
 
   @override
+  Future<String> summarizeOutput(String command, String output) async {
+    final apiKey = await _getApiKeyOrThrow();
+
+    // Truncate output if too long (keep first 1000 chars for cloud)
+    final truncatedOutput =
+        output.length > 1000 ? '${output.substring(0, 1000)}...' : output;
+
+    final messages = [
+      {
+        'role': 'system',
+        'content': 'You are a helpful assistant that summarizes command output. '
+            'Provide a concise 1-2 sentence summary of what the output shows. '
+            'Focus on the key information the user needs to know.',
+      },
+      {
+        'role': 'user',
+        'content': 'Command: $command\n\nOutput:\n$truncatedOutput',
+      },
+    ];
+
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/chat/completions',
+        data: {
+          'model': _provider.modelId,
+          'messages': messages,
+          'max_tokens': 100,
+          'temperature': 0.3,
+          'stream': false,
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'HTTP-Referer': 'https://bento.app',
+            'X-Title': 'Bento Terminal',
+          },
+        ),
+      );
+
+      final choices = response.data!['choices'] as List<dynamic>?;
+      if (choices != null && choices.isNotEmpty) {
+        final message = choices[0]['message'] as Map<String, dynamic>?;
+        final content = message?['content'] as String?;
+        if (content != null && content.isNotEmpty) {
+          return content.trim();
+        }
+      }
+
+      return 'Unable to generate summary.';
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  @override
   Future<AiSuggestion> generateCommand(String prompt) async {
     final apiKey = await _getApiKeyOrThrow();
 

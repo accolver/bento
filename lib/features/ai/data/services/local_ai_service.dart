@@ -311,6 +311,98 @@ class LocalAiService implements AiService {
     }
   }
 
+  @override
+  Future<String> summarizeOutput(String command, String output) async {
+    // Verify model exists
+    final file = File(_modelPath);
+    if (!await file.exists()) {
+      throw AiServiceException(
+        'Model file not found: $_modelPath',
+        code: 'model_not_found',
+      );
+    }
+
+    // On unsupported platforms, return fallback
+    if (!_isPlatformSupported) {
+      return 'Summary not available on this platform.';
+    }
+
+    // Stop any in-progress generation first
+    await stopGeneration();
+
+    try {
+      _isGenerating = true;
+      await _ensureModelLoaded();
+
+      // Clear context before generation
+      await _controller!.clearContext();
+
+      // Truncate output if too long (keep first 500 chars for context)
+      final truncatedOutput =
+          output.length > 500 ? '${output.substring(0, 500)}...' : output;
+
+      // Build summarization prompt
+      final prompt = '''Summarize this command output in 1-2 sentences.
+
+Command: $command
+Output: $truncatedOutput
+
+Summary:''';
+
+      // Collect all tokens
+      final buffer = StringBuffer();
+      final completer = Completer<void>();
+
+      final subscription = _controller!
+          .generate(
+        prompt: prompt,
+        maxTokens: 64,
+        temperature: 0.3,
+        topP: 0.9,
+        topK: 40,
+        repeatPenalty: 1.1,
+      )
+          .listen(
+        (token) {
+          buffer.write(token);
+        },
+        onDone: () {
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+        },
+        onError: (Object error) {
+          if (!completer.isCompleted) {
+            completer.completeError(error);
+          }
+        },
+      );
+
+      await completer.future;
+      await subscription.cancel();
+
+      final response = buffer.toString().trim();
+
+      // Clean up the response
+      var summary = response
+          .replaceAll(
+              RegExp(r'^(Summary:|Output:)\s*', caseSensitive: false), '')
+          .trim();
+
+      // Take only the first 1-2 sentences
+      final sentences = summary.split(RegExp(r'[.!?]\s+'));
+      if (sentences.length > 2) {
+        summary = '${sentences.take(2).join('. ')}.';
+      }
+
+      return summary.isEmpty ? 'No summary available.' : summary;
+    } catch (e) {
+      return 'Failed to generate summary.';
+    } finally {
+      _isGenerating = false;
+    }
+  }
+
   /// Builds the system prompt for command generation.
   ///
   /// The prompt asks for both a command and a short explanation.

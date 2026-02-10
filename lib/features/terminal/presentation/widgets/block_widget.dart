@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/constants/block_colors.dart';
+import '../../../ai/presentation/providers/ai_providers.dart';
 import '../../data/services/ansi_stripper.dart';
 import '../../domain/entities/block.dart';
 import '../../domain/entities/block_status.dart';
@@ -581,7 +582,7 @@ class _TuiSessionContent extends StatelessWidget {
 }
 
 /// Content section showing command output with action bar.
-class _BlockContent extends StatelessWidget {
+class _BlockContent extends ConsumerStatefulWidget {
   const _BlockContent({
     required this.block,
     this.onCopyOutput,
@@ -597,9 +598,53 @@ class _BlockContent extends StatelessWidget {
   final VoidCallback? onLoadFullOutput;
 
   @override
+  ConsumerState<_BlockContent> createState() => _BlockContentState();
+}
+
+class _BlockContentState extends ConsumerState<_BlockContent> {
+  String? _summary;
+  bool _isLoadingSummary = false;
+  String? _summaryError;
+
+  Future<void> _generateSummary() async {
+    if (_isLoadingSummary) return;
+
+    setState(() {
+      _isLoadingSummary = true;
+      _summaryError = null;
+    });
+
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final cleanOutput = AnsiStripper.strip(widget.block.output);
+      final summary = await aiService.summarizeOutput(
+        widget.block.command,
+        cleanOutput,
+      );
+
+      if (mounted) {
+        setState(() {
+          _summary = summary;
+          _isLoadingSummary = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _summaryError = e.toString().contains('not configured')
+              ? 'Set up AI in settings to use summaries'
+              : 'Failed to generate summary';
+          _isLoadingSummary = false;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final block = widget.block;
 
     if (block.output.isEmpty) {
       return Padding(
@@ -652,7 +697,7 @@ class _BlockContent extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
               child: InkWell(
-                onTap: onLoadFullOutput,
+                onTap: widget.onLoadFullOutput,
                 borderRadius: BorderRadius.circular(4),
                 child: Container(
                   padding:
@@ -694,12 +739,21 @@ class _BlockContent extends StatelessWidget {
                 ),
               ),
             ),
+          // AI Summary section (when available)
+          if (_summary != null || _isLoadingSummary || _summaryError != null)
+            _AiSummarySection(
+              summary: _summary,
+              isLoading: _isLoadingSummary,
+              error: _summaryError,
+            ),
           // Action bar (only for completed blocks)
           if (block.isCompleted)
             _BlockActionBar(
-              onCopyOutput: onCopyOutput,
-              onCopyAll: onCopyAll,
-              onRerun: onRerun,
+              onCopyOutput: widget.onCopyOutput,
+              onCopyAll: widget.onCopyAll,
+              onRerun: widget.onRerun,
+              onSummarize: _summary == null ? _generateSummary : null,
+              isLoadingSummary: _isLoadingSummary,
             ),
         ],
       ),
@@ -707,17 +761,94 @@ class _BlockContent extends StatelessWidget {
   }
 }
 
-/// Action bar with copy and re-run buttons.
+/// Displays the AI-generated summary of command output.
+class _AiSummarySection extends StatelessWidget {
+  const _AiSummarySection({
+    this.summary,
+    this.isLoading = false,
+    this.error,
+  });
+
+  final String? summary;
+  final bool isLoading;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark
+            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+            : theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isLoading
+                ? Icons.hourglass_empty
+                : error != null
+                    ? Icons.error_outline
+                    : Icons.auto_awesome,
+            size: 16,
+            color: error != null
+                ? theme.colorScheme.error
+                : theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: isLoading
+                ? Text(
+                    'Generating summary...',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                : error != null
+                    ? Text(
+                        error!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      )
+                    : Text(
+                        summary ?? '',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Action bar with copy, summarize, and re-run buttons.
 class _BlockActionBar extends StatelessWidget {
   const _BlockActionBar({
     this.onCopyOutput,
     this.onCopyAll,
     this.onRerun,
+    this.onSummarize,
+    this.isLoadingSummary = false,
   });
 
   final VoidCallback? onCopyOutput;
   final VoidCallback? onCopyAll;
   final VoidCallback? onRerun;
+  final VoidCallback? onSummarize;
+  final bool isLoadingSummary;
 
   @override
   Widget build(BuildContext context) {
@@ -740,6 +871,16 @@ class _BlockActionBar extends StatelessWidget {
             label: 'All',
             onPressed: onCopyAll,
             tooltip: 'Copy command and output',
+          ),
+          const SizedBox(width: 8),
+          _ActionButton(
+            icon: isLoadingSummary ? Icons.hourglass_empty : Icons.auto_awesome,
+            label: 'Summarize',
+            onPressed: isLoadingSummary ? null : onSummarize,
+            tooltip: onSummarize != null
+                ? 'Generate AI summary'
+                : 'Summary generated',
+            color: theme.colorScheme.secondary,
           ),
           const SizedBox(width: 8),
           _ActionButton(

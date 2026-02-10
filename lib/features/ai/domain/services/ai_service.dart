@@ -5,11 +5,11 @@ import '../entities/ai_suggestion.dart';
 
 /// Abstract interface for AI command generation services.
 ///
-/// All AI providers (local, cloud, remote, mock) implement this interface,
+/// All AI providers (local, cloud, remote) implement this interface,
 /// allowing the application to use any provider interchangeably.
 ///
 /// Implementations:
-/// - [MockAiService]: Keyword-based matching for testing/fallback
+/// - UnconfiguredAiService: Placeholder when AI is not set up
 /// - LocalAiService: On-device inference via flutter_llama
 /// - CloudAiService: OpenRouter API for cloud models
 /// - RemoteAiService: Ollama via SSH connection
@@ -35,7 +35,7 @@ abstract class AiService {
   /// For local: model is loaded
   /// For cloud: network available and API key valid
   /// For remote: SSH connected and Ollama responding
-  /// For mock: always true
+  /// For unconfigured: always false
   Future<bool> isAvailable();
 
   /// Get the privacy mode indicator for UI display.
@@ -54,7 +54,7 @@ abstract class AiService {
   /// For local: unload model from memory
   /// For cloud: cancel pending requests
   /// For remote: close connections
-  /// For mock: no-op
+  /// For unconfigured: no-op
   Future<void> dispose();
 }
 

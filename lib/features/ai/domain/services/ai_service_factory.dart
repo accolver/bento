@@ -4,14 +4,14 @@ import '../entities/ai_config.dart';
 import '../../data/repositories/ai_config_repository.dart';
 import '../../data/services/cloud_ai_service.dart';
 import '../../data/services/local_ai_service.dart';
-import '../../data/services/mock_ai_service.dart';
+import '../../data/services/unconfigured_ai_service.dart';
 import 'ai_service.dart';
 
 /// Factory for creating AI service instances based on configuration.
 ///
 /// The factory handles:
 /// - Service selection based on [AiConfig.mode]
-/// - Fallback to mock service when real services aren't available
+/// - Returning unconfigured service when AI is not set up
 /// - Placeholder methods for services to be implemented in other changes
 ///
 /// Usage:
@@ -25,17 +25,17 @@ class AiServiceFactory {
   /// Create an AI service based on the current configuration.
   ///
   /// Routes to the appropriate service implementation based on [config.mode]:
-  /// - [AiMode.unconfigured] → MockAiService
-  /// - [AiMode.local] → LocalAiService (if model available) or fallback to mock
-  /// - [AiMode.cloud] → CloudAiService (if API key available) or fallback to mock
-  /// - [AiMode.remote] → RemoteAiService (if Ollama detected) or fallback to mock
+  /// - [AiMode.unconfigured] → UnconfiguredAiService (prompts user to configure)
+  /// - [AiMode.local] → LocalAiService (if model available)
+  /// - [AiMode.cloud] → CloudAiService (if API key available)
+  /// - [AiMode.remote] → RemoteAiService (if Ollama detected)
   ///
   /// The [sshSession] parameter is required for remote mode to communicate
   /// with Ollama on the connected server.
   ///
   /// The [configRepository] is required for cloud mode to retrieve API keys.
   ///
-  /// Returns the appropriate service, falling back to [MockAiService] if
+  /// Returns the appropriate service, or [UnconfiguredAiService] if
   /// the requested service is unavailable.
   Future<AiService> createService(
     AiConfig config, {
@@ -46,22 +46,22 @@ class AiServiceFactory {
   }) async {
     switch (config.mode) {
       case AiMode.unconfigured:
-        return createMockService();
+        return createUnconfiguredService();
 
       case AiMode.local:
-        // Try to create local service, fallback to mock if not available
+        // Try to create local service
         if (config.localModelPath != null) {
           try {
             return await createLocalService(config.localModelPath!);
           } catch (e) {
-            // Model not found or failed to load, fallback to mock
-            return createMockService();
+            // Model not found or failed to load
+            return createUnconfiguredService();
           }
         }
-        return createMockService();
+        return createUnconfiguredService();
 
       case AiMode.cloud:
-        // Try to create cloud service, fallback to mock if no API key
+        // Try to create cloud service
         if (configRepository != null && config.cloudProvider != null) {
           try {
             final hasKey = await configRepository.hasApiKey();
@@ -70,13 +70,13 @@ class AiServiceFactory {
                   configRepository, config.cloudProvider!);
             }
           } catch (e) {
-            // API key invalid or network error, fallback to mock
+            // API key invalid or network error
           }
         }
-        return createMockService();
+        return createUnconfiguredService();
 
       case AiMode.remote:
-        // Try to create remote service, fallback to mock if not connected
+        // Try to create remote service
         if (sshSession != null && config.remoteAutoDetect) {
           try {
             final service = await createRemoteService(
@@ -87,18 +87,18 @@ class AiServiceFactory {
               return service;
             }
           } catch (e) {
-            // Ollama not available or SSH error, fallback to mock
+            // Ollama not available or SSH error
           }
         }
-        return createMockService();
+        return createUnconfiguredService();
     }
   }
 
-  /// Create a mock service (for testing and fallback).
+  /// Create an unconfigured service (prompts user to set up AI).
   ///
-  /// Returns immediately as mock service requires no initialization.
-  AiService createMockService() {
-    return MockAiService();
+  /// Returns immediately as this service has no initialization.
+  AiService createUnconfiguredService() {
+    return const UnconfiguredAiService();
   }
 
   /// Create a local AI service with the specified model.

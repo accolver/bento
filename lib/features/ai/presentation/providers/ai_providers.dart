@@ -7,8 +7,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../data/repositories/ai_config_repository.dart';
 import '../../data/services/local_ai_service.dart';
-import '../../data/services/mock_ai_service.dart';
 import '../../data/services/model_download_service.dart';
+import '../../data/services/unconfigured_ai_service.dart';
 import '../../domain/entities/ai_config.dart';
 import '../../domain/entities/ai_privacy_mode.dart';
 import '../../domain/entities/ai_suggestion.dart';
@@ -163,12 +163,12 @@ class AiServiceController extends _$AiServiceController {
 
 /// Convenience provider that returns the current AI service synchronously.
 ///
-/// Falls back to MockAiService if the async service isn't ready yet.
+/// Falls back to UnconfiguredAiService if the async service isn't ready yet.
 /// This is useful for UI code that needs immediate access to a service.
 @riverpod
 AiService aiService(Ref ref) {
   final asyncService = ref.watch(aiServiceControllerProvider);
-  return asyncService.valueOrNull ?? MockAiService();
+  return asyncService.valueOrNull ?? const UnconfiguredAiService();
 }
 
 // =============================================================================

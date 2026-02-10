@@ -113,7 +113,10 @@ class LocalAiService implements AiService {
   /// This must be called before generating commands.
   /// Loading can take several seconds depending on model size.
   Future<void> _ensureModelLoaded() async {
-    if (_isModelLoaded) return;
+    if (_isModelLoaded) {
+      debugPrint('[LocalAiService] Model already loaded (flag check)');
+      return;
+    }
     if (!_isPlatformSupported) return;
 
     _controller ??= LlamaController();
@@ -128,7 +131,17 @@ class LocalAiService implements AiService {
       );
 
       _isModelLoaded = true;
+      debugPrint('[LocalAiService] Model loaded successfully');
+    } on StateError catch (e) {
+      // Handle "Model already loaded" error from the library
+      if (e.message.contains('already loaded')) {
+        debugPrint('[LocalAiService] Model was already loaded in native layer');
+        _isModelLoaded = true;
+        return;
+      }
+      rethrow;
     } catch (e) {
+      debugPrint('[LocalAiService] Model load failed: $e');
       rethrow;
     }
   }

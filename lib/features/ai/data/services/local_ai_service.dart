@@ -190,6 +190,10 @@ class LocalAiService implements AiService {
       _isGenerating = true;
       await _ensureModelLoaded();
 
+      // Clear context before each generation to avoid KV cache overflow.
+      // We use single-shot generation (not chat), so we don't need history.
+      await _controller!.clearContext();
+
       // Build the prompt for command generation
       final systemPrompt = _buildSystemPrompt();
       final fullPrompt = _buildFullPrompt(systemPrompt, prompt);
@@ -262,6 +266,10 @@ class LocalAiService implements AiService {
     try {
       _isGenerating = true;
       await _ensureModelLoaded();
+
+      // Clear context before each generation to avoid KV cache overflow.
+      // We use single-shot generation (not chat), so we don't need history.
+      await _controller!.clearContext();
 
       final systemPrompt = _buildSystemPrompt();
       final fullPrompt = _buildFullPrompt(systemPrompt, prompt);

@@ -615,7 +615,8 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
     });
 
     try {
-      final aiService = ref.read(aiServiceProvider);
+      // Wait for the async AI service to be ready (don't use the sync fallback)
+      final aiService = await ref.read(aiServiceControllerProvider.future);
       final cleanOutput = AnsiStripper.strip(widget.block.output);
       final summary = await aiService.summarizeOutput(
         widget.block.command,

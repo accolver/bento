@@ -616,12 +616,21 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
 
     try {
       // Wait for the async AI service to be ready (don't use the sync fallback)
+      debugPrint('[BlockWidget] Getting AI service...');
       final aiService = await ref.read(aiServiceControllerProvider.future);
+      debugPrint('[BlockWidget] Got AI service: ${aiService.serviceName}');
+
       final cleanOutput = AnsiStripper.strip(widget.block.output);
+      debugPrint(
+          '[BlockWidget] Generating summary for command: ${widget.block.command}');
+      debugPrint('[BlockWidget] Output length: ${cleanOutput.length}');
+
       final summary = await aiService.summarizeOutput(
         widget.block.command,
         cleanOutput,
       );
+
+      debugPrint('[BlockWidget] Summary generated: $summary');
 
       if (mounted) {
         setState(() {
@@ -629,12 +638,23 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
           _isLoadingSummary = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[BlockWidget] Summarization failed: $e');
+      debugPrint('[BlockWidget] Stack trace: $stackTrace');
+
       if (mounted) {
         setState(() {
-          _summaryError = e.toString().contains('not configured')
-              ? 'Set up AI in settings to use summaries'
-              : 'Failed to generate summary';
+          final errorMsg = e.toString();
+          if (errorMsg.contains('not configured')) {
+            _summaryError = 'Set up AI in settings to use summaries';
+          } else if (errorMsg.contains('model_not_found')) {
+            _summaryError = 'AI model not found. Re-download in settings.';
+          } else {
+            // Show a truncated version of the actual error
+            _summaryError = errorMsg.length > 100
+                ? '${errorMsg.substring(0, 100)}...'
+                : errorMsg;
+          }
           _isLoadingSummary = false;
         });
       }
@@ -778,18 +798,35 @@ class _AiSummarySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final hasError = error != null;
+
+    // Error state: red background with white text
+    // Success state: primary color themed
+    final backgroundColor = hasError
+        ? Colors.red.shade700
+        : isDark
+            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+            : theme.colorScheme.primaryContainer.withValues(alpha: 0.5);
+
+    final borderColor = hasError
+        ? Colors.red.shade900
+        : theme.colorScheme.primary.withValues(alpha: 0.3);
+
+    final iconColor = hasError ? Colors.white : theme.colorScheme.primary;
+
+    final textColor = hasError
+        ? Colors.white
+        : isLoading
+            ? theme.colorScheme.onSurfaceVariant
+            : theme.colorScheme.onSurface;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: isDark
-            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
-            : theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,37 +834,25 @@ class _AiSummarySection extends StatelessWidget {
           Icon(
             isLoading
                 ? Icons.hourglass_empty
-                : error != null
+                : hasError
                     ? Icons.error_outline
                     : Icons.auto_awesome,
             size: 16,
-            color: error != null
-                ? theme.colorScheme.error
-                : theme.colorScheme.primary,
+            color: iconColor,
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: isLoading
-                ? Text(
-                    'Generating summary...',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  )
-                : error != null
-                    ? Text(
-                        error!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                      )
-                    : Text(
-                        summary ?? '',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
+            child: Text(
+              isLoading
+                  ? 'Generating summary...'
+                  : hasError
+                      ? error!
+                      : summary ?? '',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontStyle: isLoading ? FontStyle.italic : FontStyle.normal,
+                color: textColor,
+              ),
+            ),
           ),
         ],
       ),

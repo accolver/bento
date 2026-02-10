@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,27 +44,40 @@ class AiConfigRepository {
     final prefs = await _prefs();
     final json = prefs.getString(_configKey);
 
+    debugPrint('[AiConfigRepository] Loading config, raw json: $json');
+
     if (json == null) {
+      debugPrint(
+          '[AiConfigRepository] No config found, returning unconfigured');
       return AiConfig.unconfigured();
     }
 
     try {
       final map = jsonDecode(json) as Map<String, dynamic>;
-      return _configFromJson(map);
-    } on FormatException {
+      final config = _configFromJson(map);
+      debugPrint(
+          '[AiConfigRepository] Loaded config: mode=${config.mode}, localModelPath=${config.localModelPath}');
+      return config;
+    } on FormatException catch (e) {
       // Invalid JSON
+      debugPrint('[AiConfigRepository] FormatException: $e');
       return AiConfig.unconfigured();
-    } on Exception {
+    } on Exception catch (e) {
       // Any other parsing error
+      debugPrint('[AiConfigRepository] Exception: $e');
       return AiConfig.unconfigured();
     }
   }
 
   /// Saves the AI configuration.
   Future<void> saveConfig(AiConfig config) async {
+    debugPrint(
+        '[AiConfigRepository] Saving config: mode=${config.mode}, localModelPath=${config.localModelPath}');
     final prefs = await _prefs();
     final json = jsonEncode(_configToJson(config));
+    debugPrint('[AiConfigRepository] Saving json: $json');
     await prefs.setString(_configKey, json);
+    debugPrint('[AiConfigRepository] Config saved');
   }
 
   /// Clears all AI configuration and stored keys.

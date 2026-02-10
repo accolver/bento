@@ -53,70 +53,88 @@ class LocalAiModel with _$LocalAiModel {
     }
   }
 
-  /// Full download URL from Ollama's registry.
+  /// Full download URL for the model.
   ///
-  /// Uses Ollama's Docker-compatible registry which provides reliable
-  /// CDN-backed (Cloudflare R2) access to GGUF model blobs.
-  String get downloadUrl =>
-      'https://registry.ollama.ai/v2/library/$ollamaLibrary/blobs/$ollamaBlobDigest';
+  /// Supports two formats:
+  /// - HuggingFace: `hf:org/repo/filename.gguf`
+  /// - Ollama: `sha256:...` (legacy, may have compatibility issues)
+  String get downloadUrl {
+    if (ollamaBlobDigest.startsWith('hf:')) {
+      // HuggingFace format: hf:org/repo/filename.gguf
+      final path = ollamaBlobDigest.substring(3); // Remove 'hf:' prefix
+      final parts = path.split('/');
+      if (parts.length >= 3) {
+        final org = parts[0];
+        final repo = parts[1];
+        final filename = parts.sublist(2).join('/');
+        return 'https://huggingface.co/$org/$repo/resolve/main/$filename';
+      }
+    }
+    // Ollama registry fallback
+    return 'https://registry.ollama.ai/v2/library/$ollamaLibrary/blobs/$ollamaBlobDigest';
+  }
 }
 
 /// Available models for local AI inference.
 ///
-/// These are curated GGUF models from Ollama's registry that work well
-/// with flutter_llama and are appropriate for mobile/desktop devices.
+/// These are curated GGUF models from HuggingFace that work well
+/// with llama_flutter_android and are appropriate for mobile devices.
+///
+/// Note: We use HuggingFace direct downloads because Ollama registry blobs
+/// may have compatibility issues with some llama.cpp versions.
 const List<LocalAiModel> availableLocalModels = [
-  // TinyLlama - smallest, fastest
+  // Qwen2.5 0.5B - small, fast, good quality
   LocalAiModel(
-    id: 'tinyllama',
-    name: 'TinyLlama',
-    description: 'Fastest option, works on any device',
-    ollamaLibrary: 'tinyllama',
-    ollamaTag: 'latest',
+    id: 'qwen2.5-0.5b',
+    name: 'Qwen2.5 0.5B',
+    description: 'Small and fast, good for commands',
+    ollamaLibrary: 'qwen2.5',
+    ollamaTag: '0.5b-instruct-q4_k_m',
+    // Direct HuggingFace download - more compatible
     ollamaBlobDigest:
-        'sha256:2af3b81862c6be03c769683af18efdadb2c33f60ff32ab6f83e42c043d6c7816',
-    sizeBytes: 637699456, // ~608 MB
+        'hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    sizeBytes: 397000000, // ~397 MB
     qualityRating: 3,
-  ),
-
-  // Phi-3 Mini - best balance (RECOMMENDED)
-  LocalAiModel(
-    id: 'phi3-mini',
-    name: 'Phi-3 Mini',
-    description: 'Best balance of speed and quality',
-    ollamaLibrary: 'phi3',
-    ollamaTag: 'mini',
-    ollamaBlobDigest:
-        'sha256:633fc5be925f9a484b61d6f9b9a78021eeb462100bd557309f01ba84cac26adf',
-    sizeBytes: 2176177120, // ~2.0 GB
-    qualityRating: 5,
     isRecommended: true,
   ),
 
-  // Gemma 2 2B - good for multiple languages
+  // SmolLM2 135M - ultra tiny
   LocalAiModel(
-    id: 'gemma2-2b',
-    name: 'Gemma 2 2B',
-    description: 'Good for multiple languages',
-    ollamaLibrary: 'gemma2',
-    ollamaTag: '2b',
+    id: 'smollm2-135m',
+    name: 'SmolLM2 135M',
+    description: 'Ultra-compact, very fast',
+    ollamaLibrary: 'smollm2',
+    ollamaTag: '135m-instruct-q8_0',
     ollamaBlobDigest:
-        'sha256:7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b',
-    sizeBytes: 1629509152, // ~1.5 GB
-    qualityRating: 4,
+        'hf:HuggingFaceTB/SmolLM2-135M-Instruct-GGUF/smollm2-135m-instruct-q8_0.gguf',
+    sizeBytes: 145000000, // ~145 MB
+    qualityRating: 2,
   ),
 
-  // Qwen2 0.5B - ultra-compact
+  // TinyLlama 1.1B - classic small model
   LocalAiModel(
-    id: 'qwen2-0.5b',
-    name: 'Qwen2 0.5B',
-    description: 'Ultra-compact, very fast',
-    ollamaLibrary: 'qwen2',
-    ollamaTag: '0.5b',
+    id: 'tinyllama-1.1b',
+    name: 'TinyLlama 1.1B',
+    description: 'Proven small model, good balance',
+    ollamaLibrary: 'tinyllama',
+    ollamaTag: '1.1b-chat-q4_k_m',
     ollamaBlobDigest:
-        'sha256:8de95da68dc485c0889c205384c24642f83ca18d089559c977ffc6a3972a71a8',
-    sizeBytes: 352151968, // ~336 MB
+        'hf:TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+    sizeBytes: 669000000, // ~669 MB
     qualityRating: 3,
+  ),
+
+  // Phi-3.5 Mini - high quality
+  LocalAiModel(
+    id: 'phi3.5-mini',
+    name: 'Phi-3.5 Mini',
+    description: 'Best quality, needs more RAM',
+    ollamaLibrary: 'phi3.5',
+    ollamaTag: 'mini-instruct-q4_k_m',
+    ollamaBlobDigest:
+        'hf:bartowski/Phi-3.5-mini-instruct-GGUF/Phi-3.5-mini-instruct-Q4_K_M.gguf',
+    sizeBytes: 2390000000, // ~2.4 GB
+    qualityRating: 5,
   ),
 ];
 

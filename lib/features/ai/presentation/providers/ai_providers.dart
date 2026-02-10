@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -57,7 +58,11 @@ class AiConfigState extends _$AiConfigState {
   @override
   Future<AiConfig> build() async {
     // Load persisted config on startup
-    return _repo.loadConfig();
+    debugPrint('[AiConfigState] build() called, loading config...');
+    final config = await _repo.loadConfig();
+    debugPrint(
+        '[AiConfigState] Loaded config: mode=${config.mode}, path=${config.localModelPath}');
+    return config;
   }
 
   /// Save a new AI configuration.

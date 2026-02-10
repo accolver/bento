@@ -217,6 +217,21 @@ class ModelDownloadService {
 
       // Move partial file to final location
       if (await partialFile.exists()) {
+        // Verify file size before renaming
+        final downloadedSize = await partialFile.length();
+        debugPrint(
+            '[ModelDownload] Downloaded file size: $downloadedSize bytes');
+        debugPrint(
+            '[ModelDownload] Expected file size: ${model.sizeBytes} bytes');
+
+        // Allow some tolerance (within 1% or exact match)
+        final sizeDiff = (downloadedSize - model.sizeBytes).abs();
+        final tolerance = model.sizeBytes * 0.01;
+        if (sizeDiff > tolerance && downloadedSize < model.sizeBytes) {
+          debugPrint(
+              '[ModelDownload] WARNING: File size mismatch! Download may be incomplete.');
+        }
+
         final finalFile = File(localPath);
         if (await finalFile.exists()) {
           await finalFile.delete();

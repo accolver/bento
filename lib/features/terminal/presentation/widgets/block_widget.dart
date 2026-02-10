@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/constants/block_colors.dart';
+import '../../../ai/domain/entities/ai_privacy_mode.dart';
 import '../../../ai/presentation/providers/ai_providers.dart';
 import '../../data/services/ansi_stripper.dart';
 import '../../domain/entities/block.dart';
@@ -605,6 +606,7 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
   String? _summary;
   bool _isLoadingSummary = false;
   String? _summaryError;
+  bool _isLocalAiSummary = false;
 
   Future<void> _generateSummary() async {
     if (_isLoadingSummary) return;
@@ -612,6 +614,7 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
     setState(() {
       _isLoadingSummary = true;
       _summaryError = null;
+      _isLocalAiSummary = false;
     });
 
     try {
@@ -619,6 +622,9 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
       debugPrint('[BlockWidget] Getting AI service...');
       final aiService = await ref.read(aiServiceControllerProvider.future);
       debugPrint('[BlockWidget] Got AI service: ${aiService.serviceName}');
+
+      // Track if this is local AI (for quality warning)
+      final isLocal = aiService.privacyMode == AiPrivacyMode.local;
 
       final cleanOutput = AnsiStripper.strip(widget.block.output);
       debugPrint(
@@ -636,6 +642,7 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
         setState(() {
           _summary = summary;
           _isLoadingSummary = false;
+          _isLocalAiSummary = isLocal;
         });
       }
     } catch (e, stackTrace) {
@@ -766,6 +773,7 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
               summary: _summary,
               isLoading: _isLoadingSummary,
               error: _summaryError,
+              isLocalAi: _isLocalAiSummary,
             ),
           // Action bar (only for completed blocks)
           if (block.isCompleted)
@@ -788,11 +796,13 @@ class _AiSummarySection extends StatelessWidget {
     this.summary,
     this.isLoading = false,
     this.error,
+    this.isLocalAi = false,
   });
 
   final String? summary;
   final bool isLoading;
   final String? error;
+  final bool isLocalAi;
 
   @override
   Widget build(BuildContext context) {
@@ -828,32 +838,61 @@ class _AiSummarySection extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: borderColor),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isLoading
-                ? Icons.hourglass_empty
-                : hasError
-                    ? Icons.error_outline
-                    : Icons.auto_awesome,
-            size: 16,
-            color: iconColor,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              isLoading
-                  ? 'Generating summary...'
-                  : hasError
-                      ? error!
-                      : summary ?? '',
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontStyle: isLoading ? FontStyle.italic : FontStyle.normal,
-                color: textColor,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                isLoading
+                    ? Icons.hourglass_empty
+                    : hasError
+                        ? Icons.error_outline
+                        : Icons.auto_awesome,
+                size: 16,
+                color: iconColor,
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isLoading
+                      ? 'Generating summary...'
+                      : hasError
+                          ? error!
+                          : summary ?? '',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontStyle: isLoading ? FontStyle.italic : FontStyle.normal,
+                    color: textColor,
+                  ),
+                ),
+              ),
+            ],
           ),
+          // Local AI quality warning
+          if (!isLoading && !hasError && isLocalAi) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 12,
+                  color: Colors.orange.shade700,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Local AI may be inaccurate. Use Cloud AI for better results.',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: Colors.orange.shade700,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

@@ -103,13 +103,16 @@ class CloudAiService implements AiService {
     final messages = [
       {
         'role': 'system',
-        'content': 'You are a helpful assistant that summarizes command output. '
-            'Provide a concise 1-2 sentence summary of what the output shows. '
-            'Focus on the key information the user needs to know.',
+        'content':
+            'You summarize terminal command output. Describe what the OUTPUT shows, '
+                'not what the command does. Be concise (1-2 sentences). '
+                'Focus on the actual results: files listed, processes running, errors found, etc.',
       },
       {
         'role': 'user',
-        'content': 'Command: $command\n\nOutput:\n$truncatedOutput',
+        'content':
+            'The user ran "$command" and got this output:\n\n$truncatedOutput\n\n'
+                'Briefly describe what this output shows:',
       },
     ];
 

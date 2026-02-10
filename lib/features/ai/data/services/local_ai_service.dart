@@ -372,13 +372,12 @@ class LocalAiService implements AiService {
       final truncatedOutput =
           output.length > 500 ? '${output.substring(0, 500)}...' : output;
 
-      // Build summarization prompt
-      final prompt = '''Summarize this command output in 1-2 sentences.
+      // Build summarization prompt - be very explicit about summarizing the OUTPUT not the command
+      final prompt = '''The user ran "$command" and got this output:
 
-Command: $command
-Output: $truncatedOutput
+$truncatedOutput
 
-Summary:''';
+Briefly describe what this output shows (1-2 sentences):''';
 
       debugPrint('[LocalAiService] Starting generation...');
       debugPrint('[LocalAiService] Prompt length: ${prompt.length}');

@@ -1,7 +1,5 @@
 // @telos L1:function:lib/features/ai/domain/services:ai_service_factory
 
-import 'package:flutter/foundation.dart';
-
 import '../entities/ai_config.dart';
 import '../../data/repositories/ai_config_repository.dart';
 import '../../data/services/cloud_ai_service.dart';
@@ -46,29 +44,20 @@ class AiServiceFactory {
     // Config repository for API key access
     AiConfigRepository? configRepository,
   }) async {
-    debugPrint('[AiServiceFactory] Creating service for mode: ${config.mode}');
-    debugPrint('[AiServiceFactory] localModelPath: ${config.localModelPath}');
-
     switch (config.mode) {
       case AiMode.unconfigured:
-        debugPrint('[AiServiceFactory] Mode is unconfigured');
         return createUnconfiguredService();
 
       case AiMode.local:
         // Try to create local service
         if (config.localModelPath != null) {
           try {
-            debugPrint(
-                '[AiServiceFactory] Creating local service with path: ${config.localModelPath}');
             return await createLocalService(config.localModelPath!);
           } catch (e) {
             // Model not found or failed to load
-            debugPrint('[AiServiceFactory] Failed to create local service: $e');
             return createUnconfiguredService();
           }
         }
-        debugPrint(
-            '[AiServiceFactory] localModelPath is null, returning unconfigured');
         return createUnconfiguredService();
 
       case AiMode.cloud:
@@ -119,28 +108,22 @@ class AiServiceFactory {
   /// Throws [AiServiceException] if the model file doesn't exist or fails to load.
   ///
   /// Uses flutter_llama for on-device inference with llama.cpp backend.
-  /// Supports GPU acceleration on iOS/macOS (Metal) and Android (Vulkan/OpenCL).
+  /// Note: Local AI is experimental and may not work on all devices.
   Future<AiService> createLocalService(String modelPath) async {
-    debugPrint(
-        '[AiServiceFactory] createLocalService called with path: $modelPath');
-
     final service = LocalAiService(
       modelPath: modelPath,
-      // Use conservative settings for stability
-      contextSize: 512, // Smaller context for faster loading
-      maxTokens: 64, // Commands are short, limit for speed
-      temperature: 0.1, // Lower for deterministic output
-      nThreads: 2, // Reduce thread contention for stability
-      useGpu: false, // Disable GPU for broader compatibility
+      contextSize: 2048,
+      maxTokens: 128, // Commands are short but need some room
+      temperature: 0.3, // Lower for deterministic output
+      nThreads: 4,
+      useGpu: false, // Disabled due to compatibility issues on some devices
     );
 
-    // Verify the service is available (model exists and can load)
+    // Verify the service is available (model exists)
     final isAvailable = await service.isAvailable();
-    debugPrint('[AiServiceFactory] LocalAiService.isAvailable(): $isAvailable');
 
     if (!isAvailable) {
       await service.dispose();
-      debugPrint('[AiServiceFactory] Model not available, throwing exception');
       throw AiServiceException(
         'Local model not available at: $modelPath',
         code: 'model_not_found',

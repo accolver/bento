@@ -3,7 +3,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../../domain/entities/ai_privacy_mode.dart';
@@ -119,22 +118,16 @@ class LocalAiService implements AiService {
     _controller ??= LlamaController();
 
     try {
-      debugPrint('[LocalAiService] Loading model from: $_modelPath');
-      debugPrint(
-          '[LocalAiService] Settings: threads=$nThreads, contextSize=$contextSize, useGpu=$useGpu');
-
+      // Don't pass gpuLayers - let the library use its default
+      // Some devices have issues with GPU acceleration
       await _controller!.loadModel(
         modelPath: _modelPath,
         threads: nThreads,
         contextSize: contextSize,
-        gpuLayers: useGpu ? 99 : 0,
       );
 
       _isModelLoaded = true;
-      debugPrint('[LocalAiService] Model loaded successfully');
-    } catch (e, stackTrace) {
-      debugPrint('[LocalAiService] Failed to load model: $e');
-      debugPrint('[LocalAiService] Stack trace: $stackTrace');
+    } catch (e) {
       rethrow;
     }
   }

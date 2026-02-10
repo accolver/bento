@@ -55,25 +55,25 @@ class ModeSelectionStep extends ConsumerWidget {
               child: Column(
                 children: [
                   _ModeCard(
-                    icon: Icons.shield_outlined,
-                    title: 'Local AI',
-                    subtitle: 'Private',
-                    description:
-                        'Run AI on your device. Your data never leaves your phone.',
-                    isPrivate: true,
-                    isSelected: currentMode == AiMode.local,
-                    onTap: () => onModeSelected(AiMode.local),
-                  ),
-                  const SizedBox(height: 12),
-                  _ModeCard(
                     icon: Icons.cloud_outlined,
                     title: 'Cloud AI',
-                    subtitle: 'Powerful',
+                    subtitle: 'Recommended',
                     description:
-                        'Use advanced models via OpenRouter. Sends prompts to external servers.',
+                        'Fast, reliable AI via OpenRouter. Requires API key.',
                     isPrivate: false,
                     isSelected: currentMode == AiMode.cloud,
                     onTap: () => onModeSelected(AiMode.cloud),
+                  ),
+                  const SizedBox(height: 12),
+                  _ModeCard(
+                    icon: Icons.shield_outlined,
+                    title: 'Local AI',
+                    subtitle: 'Experimental',
+                    description:
+                        'Run AI on your device. Private but may not work on all devices.',
+                    isPrivate: true,
+                    isSelected: currentMode == AiMode.local,
+                    onTap: () => onModeSelected(AiMode.local),
                   ),
                   const SizedBox(height: 12),
                   _ModeCard(

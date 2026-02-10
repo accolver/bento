@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -144,16 +143,7 @@ class ModelDownloadService {
         resumeFromBytes = await partialFile.length();
         if (resumeFromBytes > 0) {
           isResuming = true;
-          debugPrint(
-              '[ModelDownload] Found partial download: ${DownloadProgress._formatBytes(resumeFromBytes)}');
         }
-      }
-
-      debugPrint(
-          '[ModelDownload] Starting download from: ${model.downloadUrl}');
-      debugPrint('[ModelDownload] Saving to: $localPath');
-      if (isResuming) {
-        debugPrint('[ModelDownload] Resuming from byte: $resumeFromBytes');
       }
 
       // Send initial progress if resuming
@@ -204,42 +194,17 @@ class ModelDownloadService {
       );
 
       // Check if server supported range request
-      final statusCode = response.statusCode;
-      if (isResuming && statusCode == 200) {
-        // Server returned full file (doesn't support resume)
-        // The partial file was overwritten, that's fine
-        debugPrint(
-            '[ModelDownload] Server does not support resume, downloaded full file');
-      } else if (statusCode == 206) {
-        // Partial content - resume worked
-        debugPrint('[ModelDownload] Resume successful (206 Partial Content)');
-      }
+      // 200 = full file (no resume support), 206 = partial content (resume worked)
+      // Either is fine - the file is now complete
 
       // Move partial file to final location
       if (await partialFile.exists()) {
-        // Verify file size before renaming
-        final downloadedSize = await partialFile.length();
-        debugPrint(
-            '[ModelDownload] Downloaded file size: $downloadedSize bytes');
-        debugPrint(
-            '[ModelDownload] Expected file size: ${model.sizeBytes} bytes');
-
-        // Allow some tolerance (within 1% or exact match)
-        final sizeDiff = (downloadedSize - model.sizeBytes).abs();
-        final tolerance = model.sizeBytes * 0.01;
-        if (sizeDiff > tolerance && downloadedSize < model.sizeBytes) {
-          debugPrint(
-              '[ModelDownload] WARNING: File size mismatch! Download may be incomplete.');
-        }
-
         final finalFile = File(localPath);
         if (await finalFile.exists()) {
           await finalFile.delete();
         }
         await partialFile.rename(localPath);
       }
-
-      debugPrint('[ModelDownload] Download complete!');
 
       // Final progress update
       if (!controller.isClosed) {
@@ -249,16 +214,12 @@ class ModelDownloadService {
         ));
       }
     } on DioException catch (e) {
-      debugPrint('[ModelDownload] DioException: ${e.type} - ${e.message}');
-      debugPrint('[ModelDownload] Error details: ${e.error}');
       final exception = _handleDioException(e, localPath, isResuming);
       if (!controller.isClosed) {
         controller.addError(exception);
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       // Catch any other unexpected errors (SocketException, etc.)
-      debugPrint('[ModelDownload] Unexpected error: $e');
-      debugPrint('[ModelDownload] Stack trace: $stackTrace');
       if (!controller.isClosed) {
         controller.addError(ModelDownloadException(
           message: 'Download failed: $e',
@@ -364,10 +325,16 @@ class ModelDownloadService {
   }
 
   /// Checks if a model has been fully downloaded.
+  ///
+  /// Also verifies the file is not empty and has a reasonable size.
   Future<bool> isModelDownloaded(String modelId) async {
     final path = await _getModelPath(modelId);
     final file = File(path);
-    return file.existsSync();
+    if (!file.existsSync()) return false;
+
+    // Check file has actual content (at least 1MB for any valid model)
+    final size = await file.length();
+    return size > 1024 * 1024; // Must be at least 1MB
   }
 
   /// Checks if a partial download exists for this model.

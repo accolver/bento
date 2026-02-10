@@ -143,16 +143,17 @@ AiServiceFactory aiServiceFactory(Ref ref) {
 class AiServiceController extends _$AiServiceController {
   @override
   Future<AiService> build() async {
-    final configAsync = ref.watch(aiConfigStateProvider);
     final factory = ref.watch(aiServiceFactoryProvider);
+    final configRepository = ref.watch(aiConfigRepositoryProvider);
 
-    // Wait for config to load, use unconfigured as fallback
-    final config = configAsync.valueOrNull ?? AiConfig.unconfigured();
+    // Wait for config to fully load (don't use valueOrNull which returns null while loading)
+    final config = await ref.watch(aiConfigStateProvider.future);
 
     // Create the service based on config
-    // Note: For now, we don't have SSH session or secure storage wired up,
-    // so this will always fall back to mock service for non-unconfigured modes.
-    final service = await factory.createService(config);
+    final service = await factory.createService(
+      config,
+      configRepository: configRepository,
+    );
 
     // Dispose service when provider is disposed
     ref.onDispose(service.dispose);

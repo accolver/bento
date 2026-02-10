@@ -107,13 +107,13 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
     _goToStep(AiSetupStep.localDownload);
   }
 
-  void _onLocalDownloadComplete(String modelPath) {
+  Future<void> _onLocalDownloadComplete(String modelPath) async {
     setState(() {
       _downloadedModelPath = modelPath;
     });
 
-    // Save configuration
-    ref.read(aiConfigStateProvider.notifier).setLocal(
+    // Save configuration and wait for it to complete
+    await ref.read(aiConfigStateProvider.notifier).setLocal(
           modelId: _selectedLocalModel!.id,
           modelPath: modelPath,
         );
@@ -128,17 +128,17 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
     _goToStep(AiSetupStep.cloudApiKey);
   }
 
-  void _onCloudApiKeyComplete(String apiKey) {
+  Future<void> _onCloudApiKeyComplete(String apiKey) async {
     // Save API key and configuration
     final notifier = ref.read(aiConfigStateProvider.notifier);
-    notifier.saveApiKey(apiKey);
-    notifier.setCloud(_selectedCloudProvider!);
+    await notifier.saveApiKey(apiKey);
+    await notifier.setCloud(_selectedCloudProvider!);
 
     _goToStep(AiSetupStep.complete);
   }
 
-  void _onRemoteDetectComplete() {
-    ref.read(aiConfigStateProvider.notifier).setRemote();
+  Future<void> _onRemoteDetectComplete() async {
+    await ref.read(aiConfigStateProvider.notifier).setRemote();
     _goToStep(AiSetupStep.complete);
   }
 

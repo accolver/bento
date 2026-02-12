@@ -13,7 +13,8 @@ void main() {
 
     setUp(() {
       container = ProviderContainer();
-      controller = container.read(blockListControllerProvider.notifier);
+      controller =
+          container.read(blockListControllerProvider('test-session').notifier);
     });
 
     tearDown(() {
@@ -395,7 +396,7 @@ void main() {
         // Track state changes
         var stateChangeCount = 0;
         container.listen(
-          blockListControllerProvider,
+          blockListControllerProvider('test-session'),
           (previous, next) {
             stateChangeCount++;
           },

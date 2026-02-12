@@ -12,4 +12,11 @@ enum AiPrivacyMode {
   /// AI processing uses cloud APIs.
   /// Data is sent to external servers for processing.
   cloud,
+
+  /// AI processing happens on a remote server the user controls.
+  ///
+  /// For Ollama: inference runs locally on the remote host.
+  /// For cloud proxy: API calls are made from the remote host using
+  /// the host's own API keys — keys never reach Bento.
+  remote,
 }

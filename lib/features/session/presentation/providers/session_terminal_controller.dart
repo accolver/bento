@@ -4,11 +4,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../../../core/errors/failures.dart';
+import '../../../ai/presentation/providers/ai_providers.dart';
+import '../../../ai/presentation/providers/remote_ai_providers.dart';
 import '../../../terminal/data/datasources/ssh_datasource.dart';
 import '../../../terminal/domain/entities/ssh_connection_config.dart';
 import '../../../terminal/domain/entities/terminal_config.dart';
@@ -98,6 +102,11 @@ class SessionTerminalController extends _$SessionTerminalController {
   /// Returns true if connected to an SSH session.
   bool get isConnected => _sshDataSource?.isConnected ?? false;
 
+  /// The underlying SSH client, if connected.
+  ///
+  /// Used by remote AI detection and command execution.
+  SSHClient? get sshClient => _sshDataSource?.client;
+
   /// Write a string to the terminal/SSH session.
   void write(String text) {
     if (_sshDataSource?.isConnected ?? false) {
@@ -180,6 +189,10 @@ class SessionTerminalManager extends _$SessionTerminalManager {
         ref
             .read(sessionListControllerProvider.notifier)
             .updateSessionStatus(sessionId, SessionStatus.connected);
+
+        // Trigger remote AI detection after successful SSH connection.
+        // Delay by 1 second to let the connection settle before probing.
+        _triggerRemoteAiDetection(sessionId, config, terminalController);
       },
     );
 
@@ -193,6 +206,9 @@ class SessionTerminalManager extends _$SessionTerminalManager {
 
     await terminalController.disconnect();
 
+    // Clean up remote AI state for this session's host
+    _cleanUpRemoteAi(sessionId);
+
     ref
         .read(sessionListControllerProvider.notifier)
         .updateSessionStatus(sessionId, SessionStatus.disconnected);
@@ -203,7 +219,139 @@ class SessionTerminalManager extends _$SessionTerminalManager {
   /// Invalidates the family provider for this session ID,
   /// triggering cleanup of terminal and SSH connection.
   void disposeSession(String sessionId) {
+    // Cancel any pending detection timer for this session
+    _detectionTimers[sessionId]?.cancel();
+    _detectionTimers.remove(sessionId);
+
+    // Clean up remote AI state before invalidating the session
+    _cleanUpRemoteAi(sessionId);
+
     // Invalidate the family provider to trigger disposal
     ref.invalidate(sessionTerminalControllerProvider(sessionId));
   }
+
+  /// Triggers remote AI detection after a successful SSH connection.
+  ///
+  /// Uses a cancellable [Timer] to wait 1 second for the connection to settle,
+  /// then runs detection in the background. If the session disconnects before
+  /// the timer fires, it is cancelled in [disposeSession]/[disconnectSession].
+  ///
+  /// Results are available via [remoteAiDetectionStateProvider].
+  void _triggerRemoteAiDetection(
+    String sessionId,
+    SSHConnectionConfig config,
+    SessionTerminalController terminalController,
+  ) {
+    final hostId = _hostIdFromConfig(config);
+
+    // Cancel any existing timer for this session
+    _detectionTimers[sessionId]?.cancel();
+
+    // Use a cancellable Timer instead of Future.delayed
+    _detectionTimers[sessionId] = Timer(const Duration(seconds: 1), () {
+      _detectionTimers.remove(sessionId);
+
+      final client = terminalController.sshClient;
+      if (client == null) {
+        debugPrint(
+          '[SessionTerminalManager] SSH client gone before detection for $hostId',
+        );
+        return;
+      }
+
+      // Store the session-to-host mapping for cleanup
+      _sessionHostMap[sessionId] = hostId;
+
+      // Trigger detection asynchronously
+      debugPrint(
+        '[SessionTerminalManager] Triggering AI detection for $hostId',
+      );
+      ref
+          .read(remoteAiDetectionStateProvider(hostId).notifier)
+          .detect(client)
+          .then((result) {
+        if (result.hasAnyProvider) {
+          debugPrint(
+            '[SessionTerminalManager] AI detected on $hostId: '
+            '${result.providerCount} providers',
+          );
+
+          // Auto-initialize the remote AI service controller
+          final savedConfig = ref.read(remoteAiConfigStateProvider(hostId));
+          ref
+              .read(remoteAiServiceControllerProvider(hostId).notifier)
+              .initialize(
+                client: client,
+                detectionResult: result,
+                config: savedConfig,
+              );
+
+          // Force the bridge providers to re-evaluate with fresh dependency
+          // tracking. The keepAlive activeRemoteAiServiceProvider may have
+          // a cached null from before this initialization, and stale
+          // dependency tracking can prevent it from seeing the new state.
+          ref.invalidate(activeRemoteAiServiceProvider);
+
+          // Force the global AI service controller to rebuild so it picks
+          // up the newly available remote service. Without this, the
+          // controller may have already completed its build() with
+          // UnconfiguredAiService and won't know the remote service is ready.
+          ref.invalidate(aiServiceControllerProvider);
+
+          debugPrint(
+            '[SessionTerminalManager] Invalidated aiServiceControllerProvider '
+            'after remote service init for $hostId',
+          );
+        }
+      }).catchError((Object error) {
+        debugPrint(
+          '[SessionTerminalManager] AI detection failed for $hostId: $error',
+        );
+      });
+    });
+  }
+
+  /// Cleans up remote AI state when a session disconnects or is disposed.
+  void _cleanUpRemoteAi(String sessionId) {
+    final hostId = _sessionHostMap.remove(sessionId);
+    if (hostId == null) return;
+
+    // Check if any other session is connected to the same host
+    final otherSessionsOnHost =
+        _sessionHostMap.values.where((h) => h == hostId).isNotEmpty;
+
+    if (!otherSessionsOnHost) {
+      debugPrint(
+        '[SessionTerminalManager] Last session to $hostId disconnected, '
+        'cleaning up remote AI',
+      );
+
+      // Fully tear down the remote AI service (dispose + null state).
+      // Using teardown() instead of onDisconnected() to release the
+      // SSHClient reference and allow garbage collection.
+      ref.read(remoteAiServiceControllerProvider(hostId).notifier).teardown();
+
+      // Clear detection cache (will re-detect on reconnect)
+      ref.read(remoteAiDetectionStateProvider(hostId).notifier).clear();
+
+      // Force global AI service to rebuild without the stale remote service
+      ref.invalidate(aiServiceControllerProvider);
+    }
+  }
+
+  /// Derives a host identifier from an SSH connection config.
+  ///
+  /// Uses host:port as the unique identifier for caching and lookups.
+  static String _hostIdFromConfig(SSHConnectionConfig config) {
+    return '${config.host}:${config.port}';
+  }
+
+  /// Maps session IDs to their host identifiers for cleanup tracking.
+  final Map<String, String> _sessionHostMap = {};
+
+  /// Cancellable detection timers per session ID.
+  ///
+  /// When a session disconnects before the 1-second detection delay,
+  /// the timer is cancelled to avoid wasted detection attempts.
+  final Map<String, Timer> _detectionTimers = {};
 }

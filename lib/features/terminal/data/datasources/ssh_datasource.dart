@@ -47,6 +47,12 @@ class SSHDataSource implements TerminalRepository {
   /// Current connection configuration.
   SSHConnectionConfig? _config;
 
+  /// The underlying SSH client, if connected.
+  ///
+  /// Exposed for features that need to execute commands on the remote
+  /// host outside of the PTY session (e.g., remote AI detection).
+  SSHClient? get client => _client;
+
   /// Stream of connection status changes.
   Stream<SSHConnectionStatus> get statusStream => _statusController.stream;
 

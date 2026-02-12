@@ -10,13 +10,13 @@ import '../../../../core/constants/terminal_colors.dart';
 import '../../../terminal/domain/entities/ssh_connection_config.dart';
 import '../../../terminal/domain/entities/terminal_mode.dart';
 import '../../../terminal/presentation/providers/terminal_display_mode_provider.dart';
-import '../../../terminal/presentation/providers/terminal_provider.dart';
 
 import '../../../terminal/presentation/screens/terminal_screen.dart';
 import '../../../terminal/presentation/widgets/view_mode_toggle.dart';
 import '../../domain/entities/session.dart';
 import '../../domain/entities/session_status.dart';
 import '../providers/session_list_controller.dart';
+import '../providers/session_terminal_controller.dart';
 import '../widgets/session_tab_bar.dart';
 
 /// Multi-session terminal screen with tab bar for switching between sessions.
@@ -121,9 +121,12 @@ class _MultiSessionTerminalScreenState
     final sessionState = ref.read(sessionListControllerProvider);
 
     if (displayMode == TerminalMode.tui) {
-      // In TUI mode, send Escape to the terminal
-      final terminal = ref.read(terminalControllerProvider);
-      terminal.keyInput(TerminalKey.escape);
+      // In TUI mode, send Escape to the per-session terminal
+      final activeId = sessionState.activeSessionId;
+      if (activeId != null) {
+        final terminal = ref.read(sessionTerminalControllerProvider(activeId));
+        terminal.keyInput(TerminalKey.escape);
+      }
     } else if (sessionState.activeSession != null) {
       // Show confirmation to close the active session
       _showBackConfirmation();
@@ -356,6 +359,7 @@ class _SessionTerminalViewState extends ConsumerState<_SessionTerminalView> {
   Widget build(BuildContext context) {
     // Render terminal in embedded mode (no app bar, just content)
     return TerminalScreen(
+      sessionId: widget.session.id,
       title: widget.session.displayName,
       embedded: true,
     );

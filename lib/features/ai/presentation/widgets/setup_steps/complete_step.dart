@@ -7,9 +7,14 @@ class CompleteStep extends StatefulWidget {
   const CompleteStep({
     super.key,
     required this.onComplete,
+    this.modeDescription,
   });
 
   final VoidCallback onComplete;
+
+  /// Optional mode-specific description shown below the title.
+  /// If null, shows a generic message.
+  final String? modeDescription;
 
   @override
   State<CompleteStep> createState() => _CompleteStepState();
@@ -106,7 +111,8 @@ class _CompleteStepState extends State<CompleteStep>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Tap the AI button to start writing commands',
+                  widget.modeDescription ??
+                      'Tap the AI button to start writing commands',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

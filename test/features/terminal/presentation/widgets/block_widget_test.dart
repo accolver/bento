@@ -1,6 +1,7 @@
 // @telos-test L1:function:lib/features/terminal/presentation/widgets:block_widget
 
 import 'package:bento/core/constants/block_colors.dart';
+import 'package:bento/features/terminal/data/services/ansi_stripper.dart';
 import 'package:bento/features/terminal/domain/entities/block.dart';
 import 'package:bento/features/terminal/domain/entities/block_status.dart';
 import 'package:bento/features/terminal/presentation/providers/block_provider.dart';

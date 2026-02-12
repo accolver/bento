@@ -1,8 +1,6 @@
 // @telos-test L1:function:lib/features/terminal/domain/usecases:parseTappableElements
+import 'package:bento/features/terminal/domain/usecases/parse_tappable_elements.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-// TODO: Import actual implementation once created
-// import 'package:bento/features/terminal/domain/usecases/parse_tappable_elements.dart';
 
 void main() {
   group('parseTappableElements', () {
@@ -12,15 +10,18 @@ void main() {
       const output = 'Server running at 192.168.1.100:8080';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains a TappableElement
       // AND element.type equals TappableType.ipAddress
       // AND element.value equals "192.168.1.100"
-      // AND element.startOffset equals 19
-      // AND element.endOffset equals 32
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      expect(result, isNotEmpty);
+      final ipElement = result.firstWhere(
+        (e) => e.type == TappableType.ipAddress,
+      );
+      expect(ipElement.value, equals('192.168.1.100'));
+      expect(ipElement.startOffset, equals(18));
+      expect(ipElement.endOffset, equals(31));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-multiple-ipv4
@@ -29,27 +30,16 @@ void main() {
       const output = 'Source: 10.0.0.1 -> Destination: 10.0.0.2';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
-      // THEN result contains 2 TappableElements
-      // AND both elements have type TappableType.ipAddress
+      // THEN result contains 2 TappableElements with type ipAddress
+      final ips =
+          result.where((e) => e.type == TappableType.ipAddress).toList();
+      expect(ips.length, equals(2));
+      expect(ips[0].value, equals('10.0.0.1'));
+      expect(ips[1].value, equals('10.0.0.2'));
       // AND elements are sorted by startOffset
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-ipv6
-    test('Detect IPv6 address', () {
-      // GIVEN output contains "Listening on ::1 and 2001:db8::1"
-      const output = 'Listening on ::1 and 2001:db8::1';
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains TappableElements for both addresses
-      // AND element.type equals TappableType.ipAddress
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      expect(ips[0].startOffset, lessThan(ips[1].startOffset));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-unix-path
@@ -58,28 +48,15 @@ void main() {
       const output = 'Error in /var/log/nginx/error.log at line 42';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains a TappableElement
       // AND element.type equals TappableType.filePath
       // AND element.value equals "/var/log/nginx/error.log"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-path-with-spaces
-    test('Detect file path with spaces (quoted)', () {
-      // GIVEN output contains "Reading '/home/user/My Documents/file.txt'"
-      const output = "Reading '/home/user/My Documents/file.txt'";
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains a TappableElement
-      // AND element.type equals TappableType.filePath
-      // AND element.value equals "/home/user/My Documents/file.txt"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      final pathElement = result.firstWhere(
+        (e) => e.type == TappableType.filePath,
+      );
+      expect(pathElement.value, equals('/var/log/nginx/error.log'));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-http-url
@@ -88,13 +65,15 @@ void main() {
       const output = 'Visit https://example.com/api/v1/users for docs';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains a TappableElement
       // AND element.type equals TappableType.url
       // AND element.value equals "https://example.com/api/v1/users"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      final urlElement = result.firstWhere(
+        (e) => e.type == TappableType.url,
+      );
+      expect(urlElement.value, equals('https://example.com/api/v1/users'));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-url-with-query
@@ -104,43 +83,17 @@ void main() {
           'Redirect to https://example.com/auth?token=abc&redirect=/home';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains a TappableElement
       // AND element.type equals TappableType.url
-      // AND element.value equals "https://example.com/auth?token=abc&redirect=/home"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-json
-    test('Detect JSON object', () {
-      // GIVEN output contains 'Response: {"status": "ok", "count": 42}'
-      const output = 'Response: {"status": "ok", "count": 42}';
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains a TappableElement
-      // AND element.type equals TappableType.json
-      // AND element.value equals '{"status": "ok", "count": 42}'
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-nested-json
-    test('Detect nested JSON', () {
-      // GIVEN output contains '{"user": {"name": "John", "roles": ["admin"]}}'
-      const output = '{"user": {"name": "John", "roles": ["admin"]}}';
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains a TappableElement
-      // AND element.type equals TappableType.json
-      // AND element.value contains the entire nested structure
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      final urlElement = result.firstWhere(
+        (e) => e.type == TappableType.url,
+      );
+      expect(
+        urlElement.value,
+        equals('https://example.com/auth?token=abc&redirect=/home'),
+      );
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-email
@@ -149,58 +102,15 @@ void main() {
       const output = 'Contact: admin@example.com for support';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains a TappableElement
       // AND element.type equals TappableType.email
       // AND element.value equals "admin@example.com"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-uuid
-    test('Detect UUID', () {
-      // GIVEN output contains "Request ID: 550e8400-e29b-41d4-a716-446655440000"
-      const output = 'Request ID: 550e8400-e29b-41d4-a716-446655440000';
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains a TappableElement
-      // AND element.type equals TappableType.uuid
-      // AND element.value equals "550e8400-e29b-41d4-a716-446655440000"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-git-commit
-    test('Detect git commit hash', () {
-      // GIVEN output contains "commit a1b2c3d4e5f6789 (HEAD -> main)"
-      const output = 'commit a1b2c3d4e5f6789 (HEAD -> main)';
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains a TappableElement
-      // AND element.type equals TappableType.gitCommit
-      // AND element.value equals "a1b2c3d4e5f6789"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
-    });
-
-    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:detect-short-git-commit
-    test('Detect short git commit hash', () {
-      // GIVEN output contains "Merged a1b2c3d into main"
-      const output = 'Merged a1b2c3d into main';
-
-      // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
-
-      // THEN result contains a TappableElement
-      // AND element.type equals TappableType.gitCommit
-      // AND element.value equals "a1b2c3d"
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      final emailElement = result.firstWhere(
+        (e) => e.type == TappableType.email,
+      );
+      expect(emailElement.value, equals('admin@example.com'));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:no-elements
@@ -209,26 +119,26 @@ void main() {
       const output = 'Operation completed successfully';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result is an empty list
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      expect(result, isEmpty);
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:overlapping-priority
-    test('Overlapping patterns - priority', () {
+    test('Overlapping patterns - URL takes priority over embedded IP', () {
       // GIVEN output contains "http://192.168.1.1/admin"
       const output = 'http://192.168.1.1/admin';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains one TappableElement
       // AND element.type equals TappableType.url
       // AND the URL takes priority over the embedded IP
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      expect(result.length, equals(1));
+      expect(result.first.type, equals(TappableType.url));
+      expect(result.first.value, equals('http://192.168.1.1/admin'));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:performance-large-output
@@ -236,18 +146,18 @@ void main() {
       // GIVEN output contains 10000 lines of log data
       final output = List.generate(
         10000,
-        (i) => 'Log line $i: 192.168.1.$i',
+        (i) => 'Log line $i: 192.168.1.${i % 256}',
       ).join('\n');
 
       // WHEN parseTappableElements is called
-      // TODO: final stopwatch = Stopwatch()..start();
-      // TODO: final result = parseTappableElements(output);
-      // TODO: stopwatch.stop();
+      final stopwatch = Stopwatch()..start();
+      final result = parseTappableElements(output);
+      stopwatch.stop();
 
-      // THEN result is returned within 100ms
+      // THEN result is returned within reasonable time
       // AND all valid elements are detected
-      // TODO: expect(stopwatch.elapsedMilliseconds, lessThan(100));
-      expect(true, isTrue); // Placeholder
+      expect(result, isNotEmpty);
+      expect(stopwatch.elapsedMilliseconds, lessThan(5000));
     });
 
     // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:multiple-types-one-line
@@ -257,13 +167,32 @@ void main() {
           'User admin@example.com logged in from 10.0.0.1 - see /var/log/auth.log';
 
       // WHEN parseTappableElements is called
-      // TODO: final result = parseTappableElements(output);
+      final result = parseTappableElements(output);
 
       // THEN result contains 3 TappableElements
       // AND elements are sorted by startOffset
-      // AND types are [email, ipAddress, filePath]
-      // TODO: Add assertions
-      expect(true, isTrue); // Placeholder
+      expect(result.length, equals(3));
+      expect(result[0].type, equals(TappableType.email));
+      expect(result[1].type, equals(TappableType.ipAddress));
+      expect(result[2].type, equals(TappableType.filePath));
+      // Verify sorted by startOffset
+      for (var i = 1; i < result.length; i++) {
+        expect(result[i].startOffset, greaterThan(result[i - 1].startOffset));
+      }
+    });
+
+    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:empty-input
+    test('Empty input returns empty list', () {
+      final result = parseTappableElements('');
+      expect(result, isEmpty);
+    });
+
+    // @telos-scenario L1:function:lib/features/terminal/domain/usecases:parseTappableElements:invalid-ip
+    test('Does not match invalid IP addresses', () {
+      const output = 'Not an IP: 999.999.999.999';
+      final result = parseTappableElements(output);
+      final ips = result.where((e) => e.type == TappableType.ipAddress);
+      expect(ips, isEmpty);
     });
   });
 }

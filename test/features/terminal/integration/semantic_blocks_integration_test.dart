@@ -21,7 +21,8 @@ void main() {
 
     setUp(() {
       container = ProviderContainer();
-      blockController = container.read(blockListControllerProvider.notifier);
+      blockController =
+          container.read(blockListControllerProvider('test-session').notifier);
       outputRouter = OutputRouter(
         blockController: blockController,
         bufferDuration: const Duration(milliseconds: 1), // Fast for tests
@@ -223,8 +224,9 @@ void main() {
       expect(forwardedOutput, contains('user@host:~\$ \n'));
     });
 
-    // @telos-scenario L2:...:semantic_blocks:ansi-codes-preserved
-    test('ANSI codes are preserved in block output', () async {
+    // @telos-scenario L2:...:semantic_blocks:ansi-codes-stripped
+    test('ANSI codes are stripped from block output for clean display',
+        () async {
       outputRouter.processOutput('user@host:~\$ ls --color\n');
 
       // Colored output
@@ -233,9 +235,14 @@ void main() {
 
       await Future.delayed(const Duration(milliseconds: 10));
 
-      // ANSI codes should be preserved in the block output
-      expect(blockController.state.blocks.first.output, contains('\x1b[34m'));
-      expect(blockController.state.blocks.first.output, contains('\x1b[32m'));
+      // OutputRouter strips ANSI codes before storing in blocks
+      // (terminal view shows styled output; blocks show clean text)
+      expect(blockController.state.blocks.first.output, contains('dir1'));
+      expect(blockController.state.blocks.first.output, contains('file.txt'));
+      expect(blockController.state.blocks.first.output,
+          isNot(contains('\x1b[34m')));
+      expect(blockController.state.blocks.first.output,
+          isNot(contains('\x1b[32m')));
     });
 
     // @telos-scenario L2:...:semantic_blocks:reset-allows-new-session

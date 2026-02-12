@@ -5,28 +5,32 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../data/services/output_router.dart';
 import '../../data/services/prompt_detector.dart';
 import '../../data/services/tui_mode_detector.dart';
+import '../../../session/presentation/providers/session_terminal_controller.dart';
 import 'block_provider.dart';
 import 'terminal_config_provider.dart';
 import 'terminal_display_mode_provider.dart';
-import 'terminal_provider.dart';
 
 part 'output_router_provider.g.dart';
 
-/// Provides an OutputRouter instance for the current session.
+/// Provides an OutputRouter instance for a specific session.
 ///
 /// The OutputRouter intercepts terminal output, detects command boundaries,
 /// and routes data to the BlockListController for semantic block display.
 /// Also handles TUI mode detection and automatic pause/resume of block processing.
+///
+/// Uses family pattern keyed on sessionId so each session has
+/// its own independent output router.
 @Riverpod(keepAlive: true)
 class OutputRouterController extends _$OutputRouterController {
   OutputRouter? _router;
   TuiModeDetector? _tuiModeDetector;
 
   @override
-  OutputRouter? build() {
-    // Get dependencies
+  OutputRouter? build(String sessionId) {
+    // Get dependencies - use per-session block controller
     // Use ref.read instead of ref.watch to avoid rebuilds - we only need the notifier reference once
-    final blockController = ref.read(blockListControllerProvider.notifier);
+    final blockController =
+        ref.read(blockListControllerProvider(sessionId).notifier);
     final config = ref.read(terminalConfigProvider);
 
     // Create prompt detector with custom patterns if configured
@@ -51,7 +55,7 @@ class OutputRouterController extends _$OutputRouterController {
 
     // Set up the terminal write callback automatically
     // This ensures output is written to terminal even if TerminalScreen hasn't initialized yet
-    final terminal = ref.read(terminalControllerProvider);
+    final terminal = ref.read(sessionTerminalControllerProvider(sessionId));
     _router!.onProcessedOutput = (data) {
       terminal.write(data);
     };
@@ -64,12 +68,14 @@ class OutputRouterController extends _$OutputRouterController {
           );
       // Create a TUI session block to record this session
       ref
-          .read(blockListControllerProvider.notifier)
+          .read(blockListControllerProvider(sessionId).notifier)
           .createTuiSessionBlock(triggeringCommand);
     };
     _router!.onTuiModeExit = () {
       // Complete the TUI session block
-      ref.read(blockListControllerProvider.notifier).completeTuiSessionBlock();
+      ref
+          .read(blockListControllerProvider(sessionId).notifier)
+          .completeTuiSessionBlock();
       // Update display mode state
       ref.read(terminalDisplayModeProvider.notifier).exitTuiMode();
     };
@@ -103,7 +109,9 @@ class OutputRouterController extends _$OutputRouterController {
   /// Also cancels any active TUI session to properly record interruption.
   void reset() {
     // Cancel any active TUI session before resetting
-    ref.read(blockListControllerProvider.notifier).cancelActiveTuiSession();
+    ref
+        .read(blockListControllerProvider(sessionId).notifier)
+        .cancelActiveTuiSession();
     _router?.reset();
   }
 

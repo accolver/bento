@@ -2,7 +2,7 @@
 
 import 'package:bento/features/ai/data/repositories/ai_config_repository.dart';
 import 'package:bento/features/ai/data/services/cloud_ai_service.dart';
-import 'package:bento/features/ai/data/services/mock_ai_service.dart';
+import 'package:bento/features/ai/data/services/unconfigured_ai_service.dart';
 import 'package:bento/features/ai/domain/entities/ai_config.dart';
 import 'package:bento/features/ai/domain/entities/ai_privacy_mode.dart';
 import 'package:bento/features/ai/domain/services/ai_service.dart';
@@ -21,27 +21,29 @@ void main() {
     });
 
     group('createService', () {
-      // @telos-scenario L1:function:...:ai_service_factory:unconfigured-returns-mock
-      test('returns MockAiService for unconfigured mode', () async {
+      // @telos-scenario L1:function:...:ai_service_factory:unconfigured-returns-unconfigured
+      test('returns UnconfiguredAiService for unconfigured mode', () async {
         final config = AiConfig.unconfigured();
 
         final service = await factory.createService(config);
 
-        expect(service, isA<MockAiService>());
-        expect(service.serviceName, equals('Mock AI'));
+        expect(service, isA<UnconfiguredAiService>());
+        expect(service.serviceName, equals('Not Configured'));
       });
 
-      // @telos-scenario L1:function:...:ai_service_factory:local-without-model-returns-mock
-      test('returns MockAiService for local mode without model path', () async {
+      // @telos-scenario L1:function:...:ai_service_factory:local-without-model-returns-unconfigured
+      test('returns UnconfiguredAiService for local mode without model path',
+          () async {
         const config = AiConfig(mode: AiMode.local);
 
         final service = await factory.createService(config);
 
-        expect(service, isA<MockAiService>());
+        expect(service, isA<UnconfiguredAiService>());
       });
 
-      // @telos-scenario L1:function:...:ai_service_factory:local-with-invalid-path-returns-mock
-      test('returns MockAiService for local mode with invalid model path',
+      // @telos-scenario L1:function:...:ai_service_factory:local-with-invalid-path-returns-unconfigured
+      test(
+          'returns UnconfiguredAiService for local mode with invalid model path',
           () async {
         const config = AiConfig(
           mode: AiMode.local,
@@ -50,12 +52,13 @@ void main() {
 
         final service = await factory.createService(config);
 
-        // Should fall back to mock since local AI isn't implemented yet
-        expect(service, isA<MockAiService>());
+        // Should fall back to unconfigured since model doesn't exist
+        expect(service, isA<UnconfiguredAiService>());
       });
 
-      // @telos-scenario L1:function:...:ai_service_factory:cloud-without-storage-returns-mock
-      test('returns MockAiService for cloud mode without secure storage',
+      // @telos-scenario L1:function:...:ai_service_factory:cloud-without-storage-returns-unconfigured
+      test(
+          'returns UnconfiguredAiService for cloud mode without secure storage',
           () async {
         const config = AiConfig(
           mode: AiMode.cloud,
@@ -64,36 +67,36 @@ void main() {
 
         final service = await factory.createService(config);
 
-        // Should fall back to mock since no storage provided
-        expect(service, isA<MockAiService>());
+        // Should fall back to unconfigured since no storage provided
+        expect(service, isA<UnconfiguredAiService>());
       });
 
-      // @telos-scenario L1:function:...:ai_service_factory:remote-without-session-returns-mock
-      test('returns MockAiService for remote mode without SSH session',
+      // @telos-scenario L1:function:...:ai_service_factory:remote-without-session-returns-unconfigured
+      test('returns UnconfiguredAiService for remote mode without SSH session',
           () async {
         const config = AiConfig(mode: AiMode.remote, remoteAutoDetect: true);
 
         final service = await factory.createService(config);
 
-        // Should fall back to mock since no SSH session provided
-        expect(service, isA<MockAiService>());
+        // Should fall back to unconfigured since no SSH session provided
+        expect(service, isA<UnconfiguredAiService>());
       });
     });
 
-    group('createMockService', () {
-      // @telos-scenario L1:function:...:ai_service_factory:create-mock-service
-      test('creates a MockAiService', () {
-        final service = factory.createMockService();
+    group('createUnconfiguredService', () {
+      // @telos-scenario L1:function:...:ai_service_factory:create-unconfigured-service
+      test('creates an UnconfiguredAiService', () {
+        final service = factory.createUnconfiguredService();
 
-        expect(service, isA<MockAiService>());
-        expect(service.serviceName, equals('Mock AI'));
+        expect(service, isA<UnconfiguredAiService>());
+        expect(service.serviceName, equals('Not Configured'));
         expect(service.privacyMode, equals(AiPrivacyMode.local));
       });
     });
 
     group('createLocalService', () {
       // @telos-scenario L1:function:...:ai_service_factory:local-not-implemented
-      test('throws not implemented exception', () async {
+      test('throws exception for non-existent model path', () async {
         expect(
           () => factory.createLocalService('/some/path.gguf'),
           throwsA(isA<AiServiceException>()),
@@ -118,7 +121,7 @@ void main() {
 
     group('createRemoteService', () {
       // @telos-scenario L1:function:...:ai_service_factory:remote-not-implemented
-      test('throws not implemented exception', () async {
+      test('throws exception for null SSH session', () async {
         expect(
           () => factory.createRemoteService(null),
           throwsA(isA<AiServiceException>()),

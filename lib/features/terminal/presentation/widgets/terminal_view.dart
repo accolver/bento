@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
+import '../../../session/presentation/providers/session_terminal_controller.dart';
 import '../../domain/entities/terminal_config.dart';
 import '../providers/terminal_config_provider.dart';
 import '../providers/terminal_provider.dart';
@@ -28,9 +29,13 @@ bool get _isMobilePlatform {
 class BentoTerminalView extends ConsumerStatefulWidget {
   const BentoTerminalView({
     super.key,
+    required this.sessionId,
     this.onResize,
     this.autofocus = true,
   });
+
+  /// The session ID for per-session terminal isolation.
+  final String sessionId;
 
   /// Callback when terminal dimensions change.
   final void Function(TerminalDimensions dimensions)? onResize;
@@ -48,7 +53,8 @@ class _BentoTerminalViewState extends ConsumerState<BentoTerminalView> {
 
   @override
   Widget build(BuildContext context) {
-    final terminal = ref.watch(terminalControllerProvider);
+    final terminal =
+        ref.watch(sessionTerminalControllerProvider(widget.sessionId));
     final config = ref.watch(terminalConfigProvider);
     final brightness = Theme.of(context).brightness;
     final theme = ref.watch(terminalThemeProvider(brightness));
@@ -108,7 +114,8 @@ class _BentoTerminalViewState extends ConsumerState<BentoTerminalView> {
       _lastDimensions = dimensions;
 
       // Resize the terminal via controller (which also resizes SSH PTY)
-      final controller = ref.read(terminalControllerProvider.notifier);
+      final controller = ref
+          .read(sessionTerminalControllerProvider(widget.sessionId).notifier);
       controller.resize(dimensions.columns, dimensions.rows);
 
       // Notify callback
@@ -148,7 +155,8 @@ class _BentoTerminalViewState extends ConsumerState<BentoTerminalView> {
   Future<void> _paste() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data?.text != null) {
-      final controller = ref.read(terminalControllerProvider.notifier);
+      final controller = ref
+          .read(sessionTerminalControllerProvider(widget.sessionId).notifier);
       controller.write(data!.text!);
     }
   }

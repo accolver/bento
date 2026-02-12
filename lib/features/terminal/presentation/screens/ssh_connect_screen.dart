@@ -10,11 +10,10 @@ import '../../../connections/presentation/providers/saved_connections_provider.d
 import '../../../credentials/domain/entities/credential.dart';
 import '../../../credentials/presentation/providers/credential_providers.dart';
 import '../../../credentials/presentation/screens/key_list_screen.dart';
-import '../../../session/domain/entities/session_status.dart';
 import '../../../session/presentation/providers/session_list_controller.dart';
+import '../../../session/presentation/providers/session_terminal_controller.dart';
 import '../../domain/entities/ssh_auth_method.dart';
 import '../../domain/entities/ssh_connection_config.dart';
-import '../providers/terminal_provider.dart';
 
 /// Screen for entering SSH connection details and connecting.
 ///
@@ -159,10 +158,10 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
               savedConnection: savedConnection,
             );
 
-    // Connect via the shared terminal controller (for now)
-    // TODO: Use per-session terminals once TerminalScreen is updated
-    final result =
-        await ref.read(terminalControllerProvider.notifier).connectSSH(config);
+    // Connect via the per-session terminal manager
+    final result = await ref
+        .read(sessionTerminalManagerProvider.notifier)
+        .connectSession(sessionId, config);
 
     if (!mounted) return;
 
@@ -179,11 +178,7 @@ class _SSHConnectScreenState extends ConsumerState<SSHConnectScreen>
         });
       },
       (_) async {
-        // Mark session as connected
-        ref.read(sessionListControllerProvider.notifier).updateSessionStatus(
-              sessionId,
-              SessionStatus.connected,
-            );
+        // Session status is already updated by SessionTerminalManager.connectSession
 
         try {
           // Save connection if requested

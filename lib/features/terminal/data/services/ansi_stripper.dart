@@ -1,5 +1,11 @@
 // @telos L1:function:lib/features/terminal/data/services:ansi_stripper
 
+/// Top-level convenience function for stripping ANSI escape codes.
+///
+/// Delegates to [AnsiStripper.strip].
+// @telos L1:function:lib/features/terminal/data/services:stripAnsiCodes
+String stripAnsiCodes(String text) => AnsiStripper.strip(text);
+
 /// Utility for stripping ANSI escape sequences from terminal output.
 ///
 /// Handles various escape sequence types including:

@@ -12,6 +12,8 @@ import '../../data/services/ansi_stripper.dart';
 import '../../domain/entities/block.dart';
 import '../../domain/entities/block_status.dart';
 import '../providers/block_provider.dart';
+import 'tappable_output_text.dart';
+import 'heal_banner.dart';
 
 /// Displays a single terminal block with command, output, and status.
 ///
@@ -71,6 +73,7 @@ class BlockWidget extends ConsumerWidget {
                         onCopyOutput: () => _copyOutput(context),
                         onCopyAll: () => _copyAll(context),
                         onRerun: () => _rerunCommand(context),
+                        onRerunCommand: onRerun,
                         onLoadFullOutput: () => _loadFullOutput(ref),
                       ),
             ],
@@ -81,7 +84,9 @@ class BlockWidget extends ConsumerWidget {
   }
 
   void _toggleCollapse(WidgetRef ref) {
-    ref.read(blockListControllerProvider.notifier).toggleCollapsed(block.id);
+    ref
+        .read(blockListControllerProvider(block.sessionId).notifier)
+        .toggleCollapsed(block.id);
   }
 
   void _copyCommand(BuildContext context) {
@@ -124,7 +129,9 @@ class BlockWidget extends ConsumerWidget {
   }
 
   void _loadFullOutput(WidgetRef ref) {
-    ref.read(blockListControllerProvider.notifier).loadFullOutput(block.id);
+    ref
+        .read(blockListControllerProvider(block.sessionId).notifier)
+        .loadFullOutput(block.id);
   }
 
   /// Shows a context menu with all available actions.
@@ -589,6 +596,7 @@ class _BlockContent extends ConsumerStatefulWidget {
     this.onCopyOutput,
     this.onCopyAll,
     this.onRerun,
+    this.onRerunCommand,
     this.onLoadFullOutput,
   });
 
@@ -596,6 +604,9 @@ class _BlockContent extends ConsumerStatefulWidget {
   final VoidCallback? onCopyOutput;
   final VoidCallback? onCopyAll;
   final VoidCallback? onRerun;
+
+  /// Called when a healed command should be run (passes the fixed command).
+  final void Function(String command)? onRerunCommand;
   final VoidCallback? onLoadFullOutput;
 
   @override
@@ -707,8 +718,8 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: SingleChildScrollView(
-              child: SelectableText(
-                cleanOutput,
+              child: TappableOutputText(
+                text: cleanOutput,
                 style: TextStyle(
                   fontFamily: 'JetBrainsMonoNF',
                   // Fallback for emoji which are in different Unicode blocks
@@ -774,6 +785,19 @@ class _BlockContentState extends ConsumerState<_BlockContent> {
               isLoading: _isLoadingSummary,
               error: _summaryError,
               isLocalAi: _isLocalAiSummary,
+            ),
+          // Heal banner for failed commands
+          if (block.status == BlockStatus.failed && block.output.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: HealBanner(
+                command: block.command,
+                stderr: block.output,
+                exitCode: block.exitCode ?? 1,
+                onApplyFix: (fixedCommand) {
+                  widget.onRerunCommand?.call(fixedCommand);
+                },
+              ),
             ),
           // Action bar (only for completed blocks)
           if (block.isCompleted)

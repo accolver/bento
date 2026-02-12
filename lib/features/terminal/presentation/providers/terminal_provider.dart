@@ -11,9 +11,12 @@ import 'package:xterm/xterm.dart';
 
 import '../../../../core/constants/terminal_colors.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../ai/presentation/providers/ai_providers.dart';
+import '../../../ai/presentation/providers/remote_ai_providers.dart';
 import '../../data/datasources/ssh_datasource.dart';
 import '../../domain/entities/ssh_connection_config.dart';
 import '../../domain/entities/terminal_config.dart';
+import 'block_provider.dart' show kDefaultSessionId;
 import 'output_router_provider.dart';
 import 'terminal_config_provider.dart';
 
@@ -31,6 +34,7 @@ part 'terminal_provider.g.dart';
 class TerminalController extends _$TerminalController {
   StreamSubscription<dynamic>? _outputSubscription;
   SSHDataSource? _sshDataSource;
+  Timer? _detectionTimer;
 
   @override
   Terminal build() {
@@ -46,6 +50,7 @@ class TerminalController extends _$TerminalController {
 
     // Clean up when provider is disposed
     ref.onDispose(() {
+      _detectionTimer?.cancel();
       _outputSubscription?.cancel();
       _sshDataSource?.close();
     });
@@ -78,10 +83,13 @@ class TerminalController extends _$TerminalController {
       }
 
       // Route through OutputRouter for command detection if semantic blocks enabled
+      // Note: This uses kDefaultSessionId as the legacy shared controller
+      // doesn't know which session it belongs to. The per-session path
+      // (SessionTerminalController) is the preferred code path.
       final terminalConfig = ref.read(terminalConfigProvider);
       if (terminalConfig.enableSemanticBlocks) {
         ref
-            .read(outputRouterControllerProvider.notifier)
+            .read(outputRouterControllerProvider(kDefaultSessionId).notifier)
             .processInput(transformedData);
       }
       _sshDataSource!.writeString(transformedData);
@@ -130,7 +138,10 @@ class TerminalController extends _$TerminalController {
       if (terminalConfig.enableSemanticBlocks) {
         // Route through OutputRouter for block detection
         // The OutputRouter will write to the terminal via its callback
-        ref.read(outputRouterControllerProvider.notifier).processOutput(output);
+        // Note: Uses kDefaultSessionId as legacy shared controller fallback
+        ref
+            .read(outputRouterControllerProvider(kDefaultSessionId).notifier)
+            .processOutput(output);
       } else {
         // Classic mode: write directly to terminal
         state.write(output);
@@ -140,11 +151,77 @@ class TerminalController extends _$TerminalController {
     // Re-attach the onOutput handler to the current terminal
     state.onOutput = _handleTerminalOutput;
 
+    // Trigger remote AI detection after connection settles.
+    // Delay by 1 second to let the SSH session stabilize before probing.
+    _triggerRemoteAiDetection(config);
+
     return const Right(null);
+  }
+
+  /// Triggers remote AI detection after a successful SSH connection.
+  ///
+  /// Uses a cancellable [Timer] so that if the session disconnects before
+  /// the timer fires, detection is skipped.
+  // @telos L1:function:lib/features/terminal/presentation/providers:terminal_provider:_triggerRemoteAiDetection
+  void _triggerRemoteAiDetection(SSHConnectionConfig config) {
+    _detectionTimer?.cancel();
+    final hostId = '${config.host}:${config.port}';
+
+    _detectionTimer = Timer(const Duration(seconds: 1), () {
+      _detectionTimer = null;
+
+      final client = _sshDataSource?.client;
+      if (client == null) {
+        debugPrint(
+          '[TerminalController] SSH client gone before detection for $hostId',
+        );
+        return;
+      }
+
+      debugPrint(
+        '[TerminalController] Triggering AI detection for $hostId',
+      );
+
+      ref
+          .read(remoteAiDetectionStateProvider(hostId).notifier)
+          .detect(client)
+          .then((result) {
+        if (result.hasAnyProvider) {
+          debugPrint(
+            '[TerminalController] AI detected on $hostId: '
+            '${result.providerCount} providers',
+          );
+
+          // Auto-initialize the remote AI service controller
+          final savedConfig = ref.read(remoteAiConfigStateProvider(hostId));
+          ref
+              .read(remoteAiServiceControllerProvider(hostId).notifier)
+              .initialize(
+                client: client,
+                detectionResult: result,
+                config: savedConfig,
+              );
+
+          // Force the bridge providers to re-evaluate so the global
+          // AI service picks up the newly available remote service.
+          ref.invalidate(activeRemoteAiServiceProvider);
+          ref.invalidate(aiServiceControllerProvider);
+
+          debugPrint(
+            '[TerminalController] Invalidated aiServiceControllerProvider '
+            'after remote service init for $hostId',
+          );
+        }
+      }).catchError((Object e) {
+        debugPrint('[TerminalController] AI detection failed for $hostId: $e');
+      });
+    });
   }
 
   /// Disconnects from the current SSH session.
   Future<void> disconnectSSH() async {
+    _detectionTimer?.cancel();
+    _detectionTimer = null;
     await _outputSubscription?.cancel();
     _outputSubscription = null;
     await _sshDataSource?.close();

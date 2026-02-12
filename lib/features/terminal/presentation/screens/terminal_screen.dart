@@ -15,13 +15,14 @@ import '../../../ai/presentation/widgets/ai_ghostwriter_panel.dart';
 import '../../domain/entities/terminal_config.dart';
 import '../../domain/entities/terminal_mode.dart';
 import '../../domain/entities/view_mode.dart';
+import '../../../session/presentation/providers/session_terminal_controller.dart';
 import '../providers/block_provider.dart';
 import '../providers/output_router_provider.dart';
 import '../providers/terminal_config_provider.dart';
 import '../providers/terminal_display_mode_provider.dart';
-import '../providers/terminal_provider.dart';
 import '../providers/view_mode_provider.dart';
 import '../widgets/block_list_view.dart';
+import '../widgets/command_ribbon.dart';
 import '../widgets/modifier_keys_bar.dart';
 import '../widgets/terminal_view.dart';
 import '../widgets/view_mode_toggle.dart';
@@ -36,10 +37,14 @@ import '../widgets/view_mode_toggle.dart';
 class TerminalScreen extends ConsumerStatefulWidget {
   const TerminalScreen({
     super.key,
+    required this.sessionId,
     this.title,
     this.embedded = false,
     this.onDisconnect,
   });
+
+  /// The session ID for per-session terminal isolation.
+  final String sessionId;
 
   /// Optional title for the terminal (e.g., connection name).
   final String? title;
@@ -66,18 +71,19 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   void _initializeBlocks() {
+    final sessionId = widget.sessionId;
     final config = ref.read(terminalConfigProvider);
     if (config.enableSemanticBlocks) {
       // Load any existing blocks for this session
-      ref.read(blockListControllerProvider.notifier).loadBlocks();
+      ref.read(blockListControllerProvider(sessionId).notifier).loadBlocks();
 
       // Force initialization of the output router if it hasn't been created yet
       // The router sets up its terminal callback in build(), so we just need to access it
-      ref.read(outputRouterControllerProvider);
+      ref.read(outputRouterControllerProvider(sessionId));
 
       // Set up callback to dismiss keyboard when command is submitted
       ref
-          .read(outputRouterControllerProvider.notifier)
+          .read(outputRouterControllerProvider(sessionId).notifier)
           .setCommandSubmittedCallback(() {
         // Dismiss the keyboard
         FocusManager.instance.primaryFocus?.unfocus();
@@ -116,6 +122,13 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
                     child: _buildMainContent(displayMode, viewMode, config),
                   ),
                 ),
+
+                // Command ribbon - visible when blocks are shown (not TUI/fullTerminal)
+                if (_shouldShowCommandRibbon(displayMode, viewMode))
+                  CommandRibbon(
+                    sessionId: widget.sessionId,
+                    onSuggestionTap: _handleRibbonSuggestion,
+                  ),
 
                 // Modifier keys bar - always visible
                 ModifierKeysBar(onKey: _handleKey),
@@ -156,6 +169,13 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
                     child: _buildMainContent(displayMode, viewMode, config),
                   ),
 
+                  // Command ribbon - visible when blocks are shown (not TUI/fullTerminal)
+                  if (_shouldShowCommandRibbon(displayMode, viewMode))
+                    CommandRibbon(
+                      sessionId: widget.sessionId,
+                      onSuggestionTap: _handleRibbonSuggestion,
+                    ),
+
                   // Modifier keys bar - always visible
                   ModifierKeysBar(onKey: _handleKey),
                 ],
@@ -165,7 +185,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
               if (_shouldShowAiFab(displayMode, viewMode))
                 Positioned(
                   right: 16,
-                  bottom: 70, // Above modifier bar
+                  bottom: 110, // Above modifier bar + command ribbon
                   child: AiFab(
                     onPressed: () => _showAiPanel(context),
                   ),
@@ -175,6 +195,39 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         ),
       ),
     );
+  }
+
+  /// Determines if the command ribbon should be visible.
+  ///
+  /// Shown in split and full blocks view modes where blocks are visible.
+  /// Hidden in TUI mode and full terminal mode.
+  bool _shouldShowCommandRibbon(TerminalMode displayMode, ViewMode viewMode) {
+    if (displayMode == TerminalMode.tui) return false;
+    if (viewMode == ViewMode.fullTerminal) return false;
+    return true;
+  }
+
+  /// Handles a suggestion tap from the command ribbon.
+  ///
+  /// Inserts the suggestion text into the terminal input and optionally
+  /// routes through the output router for block tracking.
+  void _handleRibbonSuggestion(String text) {
+    final sessionId = widget.sessionId;
+    final controller =
+        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
+    final config = ref.read(terminalConfigProvider);
+
+    // If semantic blocks enabled, route through output router for input tracking
+    if (config.enableSemanticBlocks) {
+      for (final char in text.split('')) {
+        ref
+            .read(outputRouterControllerProvider(sessionId).notifier)
+            .processInput(char);
+      }
+    }
+
+    // Write to terminal
+    controller.write(text);
   }
 
   /// Determines if the AI FAB should be visible.
@@ -252,12 +305,15 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
   /// Executes a command generated by AI.
   void _executeAiCommand(String command) {
-    final controller = ref.read(terminalControllerProvider.notifier);
+    final sessionId = widget.sessionId;
+    final controller =
+        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
     final config = ref.read(terminalConfigProvider);
 
     // If semantic blocks enabled, route through output router to create a block
     if (config.enableSemanticBlocks) {
-      final outputRouter = ref.read(outputRouterControllerProvider.notifier);
+      final outputRouter =
+          ref.read(outputRouterControllerProvider(sessionId).notifier);
       // Send each character to build up the input buffer
       for (final char in command.split('')) {
         outputRouter.processInput(char);
@@ -288,7 +344,8 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
     if (displayMode == TerminalMode.tui) {
       // In TUI mode, send Escape to the terminal
-      final terminal = ref.read(terminalControllerProvider);
+      final terminal =
+          ref.read(sessionTerminalControllerProvider(widget.sessionId));
       terminal.keyInput(TerminalKey.escape);
     } else {
       // In blocks/classic mode, show confirmation dialog
@@ -374,7 +431,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       ),
       actions: [
         // Connection status indicator - always visible
-        _ConnectionStatusIndicator(),
+        _ConnectionStatusIndicator(sessionId: widget.sessionId),
         // View mode toggle (hidden in TUI mode)
         if (!isInTuiMode) const ViewModeCycleButton(),
         // Collapse/expand all (only when blocks are visible, hidden in TUI mode)
@@ -402,13 +459,17 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   Future<void> _handleDisconnect() async {
-    // Disconnect SSH and go back to previous screen
-    await ref.read(terminalControllerProvider.notifier).disconnectSSH();
+    final sessionId = widget.sessionId;
+
+    // Disconnect SSH via the per-session terminal manager
+    await ref
+        .read(sessionTerminalManagerProvider.notifier)
+        .disconnectSession(sessionId);
 
     // Reset output router if semantic blocks enabled
     final config = ref.read(terminalConfigProvider);
     if (config.enableSemanticBlocks) {
-      ref.read(outputRouterControllerProvider.notifier).reset();
+      ref.read(outputRouterControllerProvider(sessionId).notifier).reset();
     }
 
     if (mounted) {
@@ -424,6 +485,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
   Widget _buildClassicTerminalView() {
     return BentoTerminalView(
+      sessionId: widget.sessionId,
       onResize: _handleResize,
     );
   }
@@ -435,6 +497,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   /// to allow proper TUI rendering.
   Widget _buildFullScreenTerminalView() {
     return BentoTerminalView(
+      sessionId: widget.sessionId,
       onResize: _handleResize,
       autofocus: true,
     );
@@ -455,6 +518,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         // Block list takes remaining space
         Expanded(
           child: BlockListView(
+            sessionId: widget.sessionId,
             onRerunCommand: _handleRerunCommand,
           ),
         ),
@@ -473,6 +537,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
               ),
             ),
             child: BentoTerminalView(
+              sessionId: widget.sessionId,
               onResize: _handleResize,
               autofocus: true,
             ),
@@ -488,12 +553,15 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   /// Users can tap on command blocks to rerun them.
   Widget _buildFullBlocksView() {
     return BlockListView(
+      sessionId: widget.sessionId,
       onRerunCommand: _handleRerunCommand,
     );
   }
 
   void _handleMenuAction(String action) {
-    final blockController = ref.read(blockListControllerProvider.notifier);
+    final sessionId = widget.sessionId;
+    final blockController =
+        ref.read(blockListControllerProvider(sessionId).notifier);
 
     switch (action) {
       case 'collapse_all':
@@ -506,7 +574,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   Future<void> _showClearBlocksConfirmation() async {
-    final blockState = ref.read(blockListControllerProvider);
+    final blockState = ref.read(blockListControllerProvider(widget.sessionId));
     final blockCount = blockState.blocks.length;
 
     if (blockCount == 0) {
@@ -544,7 +612,9 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     );
 
     if (confirmed == true && mounted) {
-      ref.read(blockListControllerProvider.notifier).clearBlocks();
+      ref
+          .read(blockListControllerProvider(widget.sessionId).notifier)
+          .clearBlocks();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content:
@@ -556,8 +626,9 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   void _handleRerunCommand(String command) {
-    // Re-execute the command
-    final controller = ref.read(terminalControllerProvider.notifier);
+    // Re-execute the command via per-session controller
+    final controller =
+        ref.read(sessionTerminalControllerProvider(widget.sessionId).notifier);
     controller.write('$command\n');
   }
 
@@ -568,12 +639,16 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   void _handleKey(String key) {
-    final controller = ref.read(terminalControllerProvider.notifier);
+    final sessionId = widget.sessionId;
+    final controller =
+        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
     final config = ref.read(terminalConfigProvider);
 
     // If semantic blocks enabled, route through output router for Ctrl+C detection
     if (config.enableSemanticBlocks) {
-      ref.read(outputRouterControllerProvider.notifier).processInput(key);
+      ref
+          .read(outputRouterControllerProvider(sessionId).notifier)
+          .processInput(key);
     }
 
     // Send to terminal/SSH
@@ -583,11 +658,17 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
 /// Connection status indicator in app bar.
 class _ConnectionStatusIndicator extends ConsumerWidget {
+  const _ConnectionStatusIndicator({required this.sessionId});
+
+  final String sessionId;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isConnected = ref.watch(
-      terminalControllerProvider.select((_) {
-        return ref.read(terminalControllerProvider.notifier).isSSHConnected;
+      sessionTerminalControllerProvider(sessionId).select((_) {
+        return ref
+            .read(sessionTerminalControllerProvider(sessionId).notifier)
+            .isConnected;
       }),
     );
 

@@ -1,4 +1,4 @@
-# Design: Remote AI (Ollama via SSH)
+# Design: Remote AI (Ollama + Cloud Providers via SSH)
 
 ## Architecture Overview
 
@@ -10,47 +10,46 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    OllamaDetector                            │
-│         (auto-probes for Ollama after connect)               │
+│              RemoteAiDetector (unified)                      │
+│     Orchestrates detection of all remote AI capabilities     │
 ├─────────────────────────────────────────────────────────────┤
-│  - Listens for SshConnectedEvent                            │
-│  - Executes: curl localhost:11434/api/tags                  │
-│  - Emits OllamaDetectedEvent with model list                │
+│  1. OllamaDetector: curl localhost:11434/api/tags           │
+│  2. EnvProviderDetector: test -n "$ANTHROPIC_API_KEY" ...   │
+│  3. Combines → RemoteAiDetectionResult                      │
+│  4. Emits → RemoteAiDetectedEvent                           │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    AI Setup Wizard                           │
-│         (shows "Remote AI" option if detected)               │
+│              Detection Notification                          │
+│   "AI providers detected on remote host" (non-intrusive)     │
+│   User taps → Provider selection UI                          │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    RemoteAiService                           │
-│                  (implements AiService)                      │
+│              RemoteAiService (implements AiService)           │
+│   Routes to correct backend based on selected provider       │
 ├─────────────────────────────────────────────────────────────┤
-│  - generateCommand() → executes curl via SSH                │
-│  - generateCommandStream() → streaming via SSH              │
-│  - Bound to specific SSH session                            │
+│  Mode A: OllamaBackend                                       │
+│    - curl localhost:11434/v1/chat/completions                │
+│    - OpenAI-compatible format                                │
+│    - Model selection from server's installed models          │
+│                                                              │
+│  Mode B: CloudProxyBackend                                   │
+│    - curl https://api.anthropic.com/... with $API_KEY        │
+│    - Provider-specific request formatting                    │
+│    - Key expanded by remote shell, never seen by Bento       │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │               SSH Session (exec channel)                     │
 │                                                              │
-│  curl -s localhost:11434/v1/chat/completions \              │
-│    -H "Content-Type: application/json" \                    │
-│    -d '{"model": "llama3:8b", ...}'                         │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Ollama Server                             │
-│              (running on remote host)                        │
-├─────────────────────────────────────────────────────────────┤
-│  localhost:11434                                            │
-│  - GET  /api/tags         → list models                     │
-│  - POST /v1/chat/completions → generate (OpenAI-compat)     │
+│  curl -s <endpoint> \                                        │
+│    -H "Authorization: Bearer $API_KEY" \                     │
+│    -H "Content-Type: application/json" \                     │
+│    -d '{"model": "...", "messages": [...]}'                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,16 +59,25 @@
 lib/features/ai/
 ├── domain/
 │   └── entities/
-│       ├── ollama_model.dart          # Model metadata
-│       ├── remote_ai_config.dart      # Remote-specific config
-│       └── ollama_detection.dart      # Detection result/events
+│       ├── ollama_model.dart              # Ollama model metadata
+│       ├── remote_ai_provider.dart        # Provider registry + metadata
+│       ├── remote_ai_detection.dart       # Unified detection result
+│       └── remote_ai_config.dart          # Per-host remote AI config
 ├── data/
 │   └── services/
-│       ├── remote_ai_service.dart     # Ollama via SSH
-│       └── ollama_detector.dart       # Auto-detection
+│       ├── remote_ai_service.dart         # AiService impl (routes to backend)
+│       ├── ollama_backend.dart            # Ollama-specific curl logic
+│       ├── cloud_proxy_backend.dart       # Cloud provider curl logic
+│       ├── ollama_detector.dart           # Probes for Ollama
+│       ├── env_provider_detector.dart     # Probes for env var API keys
+│       └── remote_ai_detector.dart        # Orchestrates both detectors
 └── presentation/
-    └── widgets/
-        └── remote_model_selector.dart # Model picker for Ollama
+    ├── widgets/
+    │   ├── remote_provider_selector.dart  # Provider picker (Ollama + cloud)
+    │   ├── remote_model_selector.dart     # Model picker for Ollama
+    │   └── remote_ai_notification.dart    # Detection notification banner
+    └── providers/
+        └── remote_ai_providers.dart       # Riverpod providers
 ```
 
 ## Communication Flow
@@ -77,216 +85,290 @@ lib/features/ai/
 ### Detection (on SSH connect)
 
 ```
-┌──────────┐     SshConnectedEvent     ┌────────────────┐
-│  SSH     │ ────────────────────────▶ │ OllamaDetector │
-│  Manager │                           └────────────────┘
+┌──────────┐     SshConnectedEvent     ┌────────────────────┐
+│  SSH     │ ────────────────────────▶ │ RemoteAiDetector   │
+│  Manager │                           └────────────────────┘
 └──────────┘                                   │
                                                │ 1. Wait 1s
-                                               │ 2. Execute probe
+                                               │ 2. Run parallel
                                                ▼
-┌──────────┐     "curl localhost:11434..."   ┌────────────────┐
-│  SSH     │ ◀──────────────────────────────│ OllamaDetector │
-│  Session │                                 └────────────────┘
-└──────────┘                                   
-      │                                        
-      │ JSON response                          
-      ▼                                        
-┌────────────────┐     OllamaDetectedEvent   ┌────────────────┐
-│ OllamaDetector │ ────────────────────────▶ │ AI Setup/UI    │
-└────────────────┘                           └────────────────┘
+                               ┌───────────────────────────┐
+                               │  Single SSH exec command   │
+                               │                           │
+                               │  # Ollama probe            │
+                               │  curl -s --connect-timeout │
+                               │    2 localhost:11434/...   │
+                               │                           │
+                               │  # Env var probe           │
+                               │  test -n "$ANTHROPIC_API_  │
+                               │    KEY" && echo ANTHROPIC  │
+                               │  test -n "$OPENAI_API_KEY" │
+                               │    && echo OPENAI          │
+                               │  ... (all known vars)      │
+                               └───────────────────────────┘
+                                               │
+                                               ▼
+                               ┌───────────────────────────┐
+                               │  RemoteAiDetectionResult   │
+                               │  - ollamaModels: [...]     │
+                               │  - cloudProviders: [       │
+                               │      anthropic, openai     │
+                               │    ]                       │
+                               └───────────────────────────┘
+                                               │
+                                               ▼
+┌──────────┐     Show notification      ┌────────────────────┐
+│  User    │ ◀──────────────────────── │ RemoteAiNotification│
+│          │                           │ "3 AI providers      │
+│          │     Tap to configure       │  found on remote"   │
+│          │ ────────────────────────▶ └────────────────────┘
+└──────────┘                                   │
+                                               ▼
+                               ┌───────────────────────────┐
+                               │  RemoteProviderSelector    │
+                               │  ┌─────────────────────┐  │
+                               │  │ ★ Claude (Anthropic) │  │
+                               │  │   Best for commands  │  │
+                               │  ├─────────────────────┤  │
+                               │  │   GPT-4o (OpenAI)   │  │
+                               │  ├─────────────────────┤  │
+                               │  │   Ollama (llama3:8b) │  │
+                               │  │   Local, no API cost │  │
+                               │  └─────────────────────┘  │
+                               └───────────────────────────┘
 ```
 
-### Command Generation
+### Command Generation (cloud proxy path)
 
 ```
 ┌──────────┐     generateCommand()     ┌──────────────────┐
 │  AI FAB  │ ────────────────────────▶ │ RemoteAiService  │
 │  Panel   │                           └──────────────────┘
 └──────────┘                                   │
-                                               │ Build curl command
+                                               │ Select backend
                                                ▼
-┌──────────┐     sshSession.execute()  ┌──────────────────┐
-│  SSH     │ ◀─────────────────────────│ RemoteAiService  │
+                               ┌───────────────────────────┐
+                               │   CloudProxyBackend        │
+                               │   - Builds provider-       │
+                               │     specific curl command  │
+                               │   - Uses $ENV_VAR for key  │
+                               │   - Formats request body   │
+                               └───────────────────────────┘
+                                               │
+                                               ▼
+┌──────────┐     sshSession.execute()   ┌──────────────────┐
+│  SSH     │ ◀──────────────────────── │ CloudProxyBackend │
 │  Session │                           └──────────────────┘
-└──────────┘                                   
-      │                                        
-      │ stdout: JSON response                  
-      ▼                                        
+└──────────┘
+      │  curl -s https://api.anthropic.com/v1/messages \
+      │    -H "x-api-key: $ANTHROPIC_API_KEY" \
+      │    -H "anthropic-version: 2023-06-01" \
+      │    -d '{"model":"claude-sonnet-4-20250514",...}'
+      │
+      │ stdout: JSON response
+      ▼
 ┌──────────────────┐     AiSuggestion        ┌──────────┐
-│ RemoteAiService  │ ──────────────────────▶ │  AI FAB  │
+│ CloudProxyBackend│ ──────────────────────▶ │  AI FAB  │
 └──────────────────┘                         │  Panel   │
                                              └──────────┘
 ```
 
+## Provider Registry
+
+Central registry of known AI providers with their API formats:
+
+```dart
+/// Known AI providers detectable via environment variables
+enum RemoteCloudProvider {
+  anthropic,
+  openai,
+  groq,
+  google,
+  mistral,
+  openRouter,
+  xai,
+  deepseek,
+  fireworks,
+  togetherAi,
+  cohere,
+}
+```
+
+Each provider has:
+
+```dart
+class RemoteProviderConfig {
+  final RemoteCloudProvider provider;
+  final String envVar;           // e.g., 'ANTHROPIC_API_KEY'
+  final String apiBaseUrl;       // e.g., 'https://api.anthropic.com'
+  final String defaultModel;     // e.g., 'claude-sonnet-4-20250514'
+  final ApiFormat apiFormat;     // openai | anthropic
+  final String authHeaderName;   // e.g., 'x-api-key' or 'Authorization'
+  final String authHeaderFormat; // e.g., 'Bearer $KEY' or '$KEY'
+  final int qualityRank;         // 1 = best, used for auto-recommendation
+  final Map<String, String> extraHeaders; // e.g., {'anthropic-version': '2023-06-01'}
+}
+```
+
+### API Format Abstraction
+
+Most providers use OpenAI-compatible chat completion format. Anthropic is the
+main exception. We abstract this into two formats:
+
+```dart
+enum ApiFormat {
+  /// OpenAI chat completion format
+  /// POST /v1/chat/completions
+  /// { "model": "...", "messages": [...], "stream": bool }
+  openaiCompatible,
+
+  /// Anthropic Messages API format
+  /// POST /v1/messages
+  /// { "model": "...", "messages": [...], "max_tokens": int }
+  anthropicMessages,
+}
+```
+
+### Provider-Specific Curl Templates
+
+```dart
+// OpenAI-compatible (OpenAI, Groq, Mistral, xAI, Deepseek, etc.)
+String buildOpenAiCurl(String prompt, RemoteProviderConfig config) => '''
+curl -s ${config.apiBaseUrl}/chat/completions \\
+  -H "Authorization: Bearer \$${config.envVar}" \\
+  -H "Content-Type: application/json" \\
+  -d '$escapedBody'
+''';
+
+// Anthropic format
+String buildAnthropicCurl(String prompt, RemoteProviderConfig config) => '''
+curl -s ${config.apiBaseUrl}/v1/messages \\
+  -H "x-api-key: \$${config.envVar}" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "Content-Type: application/json" \\
+  -d '$escapedBody'
+''';
+```
+
+## Environment Variable Detection
+
+### Detection Command
+
+All env var checks are batched into a single SSH exec to minimize round trips:
+
+```bash
+# Single command that checks all known vars
+# Uses test -n to check existence without printing the value
+(test -n "$ANTHROPIC_API_KEY" && echo "ANTHROPIC_API_KEY") 2>/dev/null
+(test -n "$OPENAI_API_KEY" && echo "OPENAI_API_KEY") 2>/dev/null
+(test -n "$GROQ_API_KEY" && echo "GROQ_API_KEY") 2>/dev/null
+(test -n "$GOOGLE_API_KEY" && echo "GOOGLE_API_KEY") 2>/dev/null
+(test -n "$GEMINI_API_KEY" && echo "GEMINI_API_KEY") 2>/dev/null
+(test -n "$MISTRAL_API_KEY" && echo "MISTRAL_API_KEY") 2>/dev/null
+(test -n "$OPENROUTER_API_KEY" && echo "OPENROUTER_API_KEY") 2>/dev/null
+(test -n "$XAI_API_KEY" && echo "XAI_API_KEY") 2>/dev/null
+(test -n "$DEEPSEEK_API_KEY" && echo "DEEPSEEK_API_KEY") 2>/dev/null
+(test -n "$FIREWORKS_API_KEY" && echo "FIREWORKS_API_KEY") 2>/dev/null
+(test -n "$TOGETHER_API_KEY" && echo "TOGETHER_API_KEY") 2>/dev/null
+(test -n "$COHERE_API_KEY" && echo "COHERE_API_KEY") 2>/dev/null
+(test -n "$CLAUDE_CODE_OAUTH_TOKEN" && echo "CLAUDE_CODE_OAUTH_TOKEN") 2>/dev/null
+echo "---ENV_CHECK_DONE---"
+```
+
+Output is a newline-separated list of variable names that exist. Parse to
+determine available providers.
+
+### Shell Compatibility
+
+The detection command must work across common shells:
+
+- bash, zsh, sh, dash, fish (via `test` which is POSIX)
+- Handles non-interactive login shells where env vars may be set in `.bashrc`,
+  `.zshrc`, `.profile`, or `.env`
+- `2>/dev/null` suppresses any error output
+- Sentinel `---ENV_CHECK_DONE---` confirms command completed
+
+### Important: Login Shell Env Vars
+
+Some env vars are only set in login shells. The SSH exec may not load
+`.bashrc`/`.zshrc`. We handle this by:
+
+1. First trying the direct `test -n` approach
+2. If no vars found, try `bash -l -c '...'` to invoke a login shell
+3. Cache the shell invocation strategy per host
+
 ## Ollama API Reference
+
+(Unchanged from original design — see Ollama detection section)
 
 ### List Models
 
 ```bash
-curl localhost:11434/api/tags
-```
-
-Response:
-
-```json
-{
-  "models": [
-    {
-      "name": "llama3:8b",
-      "model": "llama3:8b",
-      "modified_at": "2024-01-15T10:30:00Z",
-      "size": 4661224676,
-      "digest": "sha256:abc123...",
-      "details": {
-        "parent_model": "",
-        "format": "gguf",
-        "family": "llama",
-        "families": ["llama"],
-        "parameter_size": "8B",
-        "quantization_level": "Q4_0"
-      }
-    }
-  ]
-}
+curl -s localhost:11434/api/tags
 ```
 
 ### Chat Completion (OpenAI-compatible)
 
 ```bash
-curl localhost:11434/v1/chat/completions \
+curl -s localhost:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama3:8b",
-    "messages": [
-      {"role": "system", "content": "You are a terminal assistant..."},
-      {"role": "user", "content": "list docker containers"}
-    ],
-    "max_tokens": 256,
-    "temperature": 0.3,
-    "stream": false
-  }'
-```
-
-Response:
-
-```json
-{
-  "id": "chatcmpl-123",
-  "object": "chat.completion",
-  "created": 1705312200,
-  "model": "llama3:8b",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "docker ps -a"
-    },
-    "finish_reason": "stop"
-  }],
-  "usage": {
-    "prompt_tokens": 42,
-    "completion_tokens": 5,
-    "total_tokens": 47
-  }
-}
-```
-
-## SSH Exec Implementation
-
-```dart
-class RemoteAiService implements AiService {
-  final SshSession _sshSession;
-  
-  Future<AiSuggestion> generateCommand(AiPrompt prompt) async {
-    // Build the request JSON
-    final requestBody = {
-      'model': _config.selectedModel,
-      'messages': [
-        {'role': 'system', 'content': _buildSystemPrompt(prompt.context)},
-        {'role': 'user', 'content': prompt.text},
-      ],
-      'max_tokens': 256,
-      'temperature': 0.3,
-      'stream': false,
-    };
-    
-    // Escape for shell (handle quotes)
-    final jsonStr = jsonEncode(requestBody);
-    final escaped = jsonStr.replaceAll("'", "'\"'\"'");  // Shell escape
-    
-    // Execute via SSH
-    final result = await _sshSession.execute('''
-curl -s localhost:${_config.port}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '$escaped'
-''');
-    
-    if (result.exitCode != 0) {
-      throw RemoteExecutionException(
-        'curl failed: ${result.stderr}',
-        exitCode: result.exitCode,
-      );
-    }
-    
-    // Parse response
-    try {
-      final json = jsonDecode(result.stdout);
-      final content = json['choices'][0]['message']['content'] as String;
-      return AiSuggestion(
-        command: content.trim(),
-        confidence: 0.8,  // No confidence from Ollama, use default
-      );
-    } catch (e) {
-      throw RemoteParseException('Invalid Ollama response: $e');
-    }
-  }
-}
+  -d '{"model": "llama3:8b", "messages": [...], "stream": false}'
 ```
 
 ## Streaming Implementation
 
-For streaming, we pipe curl's output through the SSH channel:
+### Ollama Streaming
+
+Same as original design — pipe `curl -sN` output through SSH channel and parse
+SSE format.
+
+### Cloud Provider Streaming
+
+Cloud providers also support SSE streaming via the OpenAI-compatible format:
+
+```bash
+# Streaming via SSH proxy
+curl -sN https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama-3.3-70b", "messages": [...], "stream": true}'
+```
+
+For Anthropic streaming (different SSE format):
+
+```bash
+curl -sN https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4-20250514", "messages": [...], "stream": true}'
+```
+
+Both formats yield `data: {...}` lines that we parse incrementally.
+
+## Connection Lifecycle
 
 ```dart
-Stream<AiStreamEvent> generateCommandStream(AiPrompt prompt) async* {
-  final requestBody = jsonEncode({
-    'model': _config.selectedModel,
-    'messages': [...],
-    'stream': true,
-  });
-  
-  final escaped = _escapeForShell(requestBody);
-  
-  // Start streaming exec
-  final stream = _sshSession.executeStream('''
-curl -sN localhost:${_config.port}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '$escaped'
-''');
-  
-  final buffer = StringBuffer();
-  
-  await for (final chunk in stream) {
-    // Parse SSE format from curl output
-    for (final line in chunk.split('\n')) {
-      if (line.startsWith('data: ') && !line.contains('[DONE]')) {
-        try {
-          final json = jsonDecode(line.substring(6));
-          final delta = json['choices']?[0]?['delta']?['content'];
-          if (delta != null) {
-            buffer.write(delta);
-            yield AiStreamEvent.token(delta);
-          }
-        } catch (e) {
-          // Skip malformed chunks
-        }
-      }
-    }
+class RemoteAiService {
+  bool _connected = true;
+  RemoteBackend _backend; // OllamaBackend or CloudProxyBackend
+
+  void onDisconnected() {
+    _connected = false;
+    _controller.add(RemoteAiStatusEvent.disconnected);
   }
-  
-  yield AiStreamEvent.complete(
-    AiSuggestion(command: buffer.toString().trim()),
-  );
+
+  void onReconnected(SshSession newSession) {
+    _sshSession = newSession;
+    _connected = true;
+    // Re-detect — models or env vars may have changed
+    _redetect();
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    return _connected && _backend.isConfigured;
+  }
 }
 ```
 
@@ -299,50 +381,87 @@ curl -sN localhost:${_config.port}/v1/chat/completions \\
 **Rationale**:
 
 - Simpler implementation (no local port management)
-- Works through any SSH connection (including jumpboxes)
+- Works for both Ollama (local) and cloud providers (outbound)
+- Works through jumpboxes
 - No firewall issues with local port binding
-- Latency difference is negligible for our use case (~100ms)
 
-### D2: Silent Detection
+### D2: Silent Detection, Opt-in Usage
 
-**Decision**: Detect Ollama silently, don't prompt if not found
-
-**Rationale**:
-
-- Most servers won't have Ollama - don't annoy users
-- Users who have Ollama will see it appear as an option
-- Avoids "failed to detect" noise in logs/UI
-- Can add "Check for Ollama" manual option later if needed
-
-### D3: Per-Host Model Selection
-
-**Decision**: Remember model selection per SSH host
+**Decision**: Detect silently, show notification, let user choose
 
 **Rationale**:
 
-- Different servers may have different models
-- User might prefer different models for different workloads
-- Selection is stored with hostId as key
-- Falls back to first available if stored model is gone
+- Probing for env vars is lightweight (single `test` command)
+- Users shouldn't be surprised by AI switching modes
+- Non-intrusive notification respects user attention
+- "One tap to enable" is still very low friction
 
-### D4: Connection Lifecycle
+### D3: Per-Host Provider Memory
 
-**Decision**: RemoteAiService is bound to SSH session lifecycle
-
-**Rationale**:
-
-- Service becomes invalid when SSH disconnects
-- Must be recreated on reconnect (models may have changed)
-- Prevents stale connection attempts
-- Clean separation of concerns
-
-### D5: curl Dependency
-
-**Decision**: Require curl on remote server
+**Decision**: Remember provider selection per SSH host
 
 **Rationale**:
 
-- curl is available on virtually all Unix servers
-- Alternative (netcat/socat) less reliable
-- Can detect absence and inform user
-- Avoids complex HTTP implementation over SSH channel
+- Different machines have different providers configured
+- User might prefer Claude on their dev machine but Groq on CI servers
+- Selection stored with hostId as key in SharedPreferences
+
+### D4: Key-Opaque Architecture
+
+**Decision**: Never read API key values, only check existence
+
+**Rationale**:
+
+- Maximum security — keys never transit the SSH channel as values
+- `test -n "$VAR"` only checks if non-empty
+- `curl` uses shell expansion `$VAR` so the key never appears in Bento
+- No need to store remote API keys on device
+
+### D5: Curated Provider List
+
+**Decision**: Only check a fixed list of known provider env vars
+
+**Rationale**:
+
+- No `env | grep` — avoids reading arbitrary env vars
+- Users can predict exactly what Bento checks for
+- New providers added via app updates
+- Avoids false positives from unrelated `_API_KEY` vars
+
+### D6: Provider API Format
+
+**Decision**: Two API format abstractions (OpenAI-compatible and Anthropic)
+
+**Rationale**:
+
+- Most providers (OpenAI, Groq, Mistral, xAI, Deepseek, Fireworks, Together,
+  OpenRouter) all use the OpenAI chat completion format
+- Only Anthropic uses a unique format (Messages API)
+- Google Gemini has its own format but also supports an OpenAI-compatible
+  endpoint via their newer API
+- Two formats cover all providers with minimal abstraction
+
+### D7: Parallel Detection
+
+**Decision**: Run Ollama probe and env var check in parallel
+
+**Rationale**:
+
+- Both are independent SSH exec commands
+- Combined adds ~0 latency vs sequential ~3s extra
+- Can be batched into a single exec if needed (Ollama check + env check in one
+  shell script)
+
+## Error Handling
+
+| Error                         | Recovery                                     |
+| ----------------------------- | -------------------------------------------- |
+| curl not found on server      | Inform user, suggest installing curl         |
+| Ollama not responding         | Mark unavailable, only show cloud providers  |
+| SSH disconnected              | Mark all unavailable, re-detect on reconnect |
+| Env var check fails           | Silent — treat as no providers detected      |
+| API call via proxy fails      | Show error from remote curl, suggest retry   |
+| Model not found (Ollama)      | Fall back to first available model           |
+| Rate limited (cloud provider) | Show rate limit message, suggest waiting     |
+| Login shell needed            | Retry with `bash -l -c` wrapper              |
+| Generation timeout            | Cancel and return timeout error              |

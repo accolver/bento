@@ -344,12 +344,31 @@ class _PrivacyBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isLocal = mode == AiPrivacyMode.local;
+
+    // Determine visual styling based on privacy mode
+    final (String label, IconData icon, Color color) = switch (mode) {
+      AiPrivacyMode.local => (
+          'Local',
+          Icons.security,
+          theme.aiHighConfidenceColor
+        ),
+      AiPrivacyMode.remote => (
+          'Remote',
+          Icons.dns_outlined,
+          theme.aiHighConfidenceColor
+        ),
+      AiPrivacyMode.cloud => ('Cloud', Icons.cloud, Colors.blue),
+    };
+
+    final semanticLabel = switch (mode) {
+      AiPrivacyMode.local => 'Privacy mode: Local processing. Tap to change.',
+      AiPrivacyMode.remote =>
+        'Privacy mode: Remote server processing. Tap to change.',
+      AiPrivacyMode.cloud => 'Privacy mode: Cloud processing. Tap to change.',
+    };
 
     return Semantics(
-      label: isLocal
-          ? 'Privacy mode: Local processing. Tap to change.'
-          : 'Privacy mode: Cloud processing. Tap to change.',
+      label: semanticLabel,
       button: true,
       child: Material(
         color: Colors.transparent,
@@ -364,48 +383,50 @@ class _PrivacyBadge extends ConsumerWidget {
             if (context.mounted) {
               await AiSetupWizard.show(context);
 
-              // Refresh the AI service after reconfiguration
-              ref.invalidate(aiServiceProvider);
+              // Guard against widget disposal during the wizard modal.
+              // The widget may have been removed from the tree while the
+              // bottom sheet was open, making ref unusable.
+              if (!context.mounted) return;
+
+              // Refresh the AI service controller after reconfiguration.
+              // Invalidate the async controller (not just the sync wrapper)
+              // so it rebuilds with the new config and picks up any
+              // remote service that was initialized during the wizard.
+              ref.invalidate(aiServiceControllerProvider);
             }
           },
           borderRadius: BorderRadius.circular(12),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: isLocal
-                  ? theme.aiHighConfidenceColor.withValues(alpha: 0.1)
-                  : Colors.blue.withValues(alpha: 0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isLocal
-                    ? theme.aiHighConfidenceColor.withValues(alpha: 0.3)
-                    : Colors.blue.withValues(alpha: 0.3),
+                color: color.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  isLocal ? Icons.security : Icons.cloud,
+                  icon,
                   size: 12,
-                  color: isLocal ? theme.aiHighConfidenceColor : Colors.blue,
+                  color: color,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  isLocal ? 'Local' : 'Cloud',
+                  label,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: isLocal ? theme.aiHighConfidenceColor : Colors.blue,
+                    color: color,
                   ),
                 ),
                 const SizedBox(width: 2),
                 Icon(
                   Icons.chevron_right,
                   size: 12,
-                  color: isLocal
-                      ? theme.aiHighConfidenceColor.withValues(alpha: 0.7)
-                      : Colors.blue.withValues(alpha: 0.7),
+                  color: color.withValues(alpha: 0.7),
                 ),
               ],
             ),

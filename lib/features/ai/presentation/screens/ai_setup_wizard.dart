@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/ai_config.dart';
 import '../../domain/entities/local_ai_model.dart';
 import '../providers/ai_providers.dart';
+import '../providers/remote_ai_providers.dart';
 import '../widgets/setup_steps/cloud_api_key_step.dart';
 import '../widgets/setup_steps/cloud_provider_step.dart';
 import '../widgets/setup_steps/complete_step.dart';
@@ -69,6 +70,8 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
   LocalAiModel? _selectedLocalModel;
   CloudAiProvider? _selectedCloudProvider;
   String? _downloadedModelPath;
+  String? _completeModeDescription;
+  bool _remoteAutoDetect = true;
 
   void _goToStep(AiSetupStep step) {
     setState(() {
@@ -118,6 +121,8 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
           modelPath: modelPath,
         );
 
+    _completeModeDescription =
+        'Local AI running on your device. Data never leaves your phone.';
     _goToStep(AiSetupStep.complete);
   }
 
@@ -134,11 +139,66 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
     await notifier.saveApiKey(apiKey);
     await notifier.setCloud(_selectedCloudProvider!);
 
+    _completeModeDescription = 'Cloud AI configured. '
+        'Tap the AI button to start writing commands.';
     _goToStep(AiSetupStep.complete);
   }
 
   Future<void> _onRemoteDetectComplete() async {
-    await ref.read(aiConfigStateProvider.notifier).setRemote();
+    await ref.read(aiConfigStateProvider.notifier).setRemote(
+          remoteAutoDetect: _remoteAutoDetect,
+        );
+
+    // Build a mode-specific description based on what was detected.
+    // Try multiple sources to find the active service/detection info.
+    final hostId = ref.read(activeRemoteHostIdProvider);
+    if (hostId != null) {
+      // First try the active service
+      var remoteService = ref.read(activeRemoteAiServiceProvider);
+      // Fallback: read service controller directly (keepAlive provider)
+      remoteService ??= ref.read(remoteAiServiceControllerProvider(hostId));
+
+      if (remoteService != null) {
+        _completeModeDescription =
+            'Remote AI active via ${remoteService.backend.displayName}. '
+            'Data stays on your infrastructure.';
+      } else {
+        // No service yet, but check detection results
+        final detectionResult =
+            ref.read(remoteAiDetectionStateProvider(hostId)).valueOrNull;
+        if (detectionResult != null && detectionResult.hasAnyProvider) {
+          final providerNames = <String>[];
+          if (detectionResult.hasOllama) {
+            providerNames.add(
+              'Ollama (${detectionResult.ollamaModels.first.displayName})',
+            );
+          }
+          if (detectionResult.hasCloudProviders) {
+            providerNames.add(detectionResult.bestCloudProvider!.displayName);
+          }
+          _completeModeDescription = 'Found: ${providerNames.join(", ")}. '
+              'Data stays on your infrastructure.';
+        } else {
+          _completeModeDescription =
+              'Remote AI will detect providers when you connect via SSH.';
+        }
+      }
+    } else {
+      _completeModeDescription =
+          'Remote AI will detect providers when you connect via SSH.';
+    }
+
+    // Force the bridge providers to re-evaluate from scratch. Without this,
+    // the keepAlive activeRemoteAiServiceProvider may have a cached null
+    // value from before the remote service was initialized, and stale
+    // dependency tracking prevents it from picking up the new state.
+    ref.invalidate(activeRemoteAiServiceProvider);
+    ref.invalidate(activeRemoteHostIdProvider);
+
+    // Now invalidate the AI service controller to force a rebuild that
+    // picks up the newly configured remote mode with fresh provider values.
+    ref.invalidate(aiServiceControllerProvider);
+
     _goToStep(AiSetupStep.complete);
   }
 
@@ -229,10 +289,14 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
       AiSetupStep.remoteDetect => RemoteDetectStep(
           key: const ValueKey('remote-detect'),
           onComplete: _onRemoteDetectComplete,
+          onAutoDetectChanged: (value) {
+            _remoteAutoDetect = value;
+          },
         ),
       AiSetupStep.complete => CompleteStep(
           key: const ValueKey('complete'),
           onComplete: _onSetupComplete,
+          modeDescription: _completeModeDescription,
         ),
     };
   }

@@ -60,7 +60,10 @@ GoRouter router(RouterRef ref) {
         name: 'terminal',
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
-          return TerminalScreen(title: 'Terminal: $id');
+          return TerminalScreen(
+            sessionId: id,
+            title: 'Terminal: $id',
+          );
         },
       ),
       GoRoute(

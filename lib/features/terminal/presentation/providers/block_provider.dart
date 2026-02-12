@@ -71,19 +71,24 @@ const kTruncationIndicator =
 ///
 /// Handles block creation, output streaming, status updates,
 /// and persistence to database.
+///
+/// Uses family pattern keyed on sessionId so each session has
+/// its own independent block list.
 @Riverpod(keepAlive: true)
 class BlockListController extends _$BlockListController {
   static const _uuid = Uuid();
 
   BlockRepository? _repository;
-  String _sessionId = kDefaultSessionId;
+  late String _sessionId;
 
   /// Stores the full output for blocks that have been truncated in memory.
   /// Key: blockId, Value: full output string
   final Map<String, String> _fullOutputCache = {};
 
   @override
-  BlockListState build() {
+  BlockListState build(String sessionId) {
+    _sessionId = sessionId;
+
     // Get repository (may be null if database not initialized)
     // Use ref.read instead of ref.watch to avoid rebuilding when repository changes
     try {
@@ -93,11 +98,6 @@ class BlockListController extends _$BlockListController {
     }
 
     return const BlockListState();
-  }
-
-  /// Sets the current session ID.
-  void setSessionId(String sessionId) {
-    _sessionId = sessionId;
   }
 
   /// Loads blocks from database for the current session.

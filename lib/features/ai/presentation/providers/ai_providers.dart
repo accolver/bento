@@ -16,6 +16,7 @@ import '../../domain/entities/ai_suggestion.dart';
 // local_ai_model imported indirectly through model_download_service
 import '../../domain/services/ai_service.dart';
 import '../../domain/services/ai_service_factory.dart';
+import 'remote_ai_providers.dart';
 
 part 'ai_providers.g.dart';
 
@@ -104,11 +105,14 @@ class AiConfigState extends _$AiConfigState {
   }
 
   /// Set to remote AI mode.
-  Future<void> setRemote({String? modelName}) async {
+  Future<void> setRemote({
+    String? modelName,
+    bool remoteAutoDetect = true,
+  }) async {
     final current = state.valueOrNull ?? AiConfig.unconfigured();
     final config = current.copyWith(
       mode: AiMode.remote,
-      remoteAutoDetect: true,
+      remoteAutoDetect: remoteAutoDetect,
       remoteModelName: modelName,
       configuredAt: DateTime.now(),
     );
@@ -151,19 +155,58 @@ class AiServiceController extends _$AiServiceController {
 
   @override
   Future<AiService> build() async {
-    // Dispose previous service if exists
-    if (_currentService != null) {
+    // Dispose previous service if exists (only non-remote services we own)
+    if (_currentService != null && !_isRemoteService) {
       await _currentService!.dispose();
-      _currentService = null;
     }
+    _currentService = null;
+    _isRemoteService = false;
 
     final factory = ref.watch(aiServiceFactoryProvider);
     final configRepository = ref.watch(aiConfigRepositoryProvider);
 
+    // IMPORTANT: Establish all ref.watch() subscriptions BEFORE any await.
+    // In Riverpod, watches after an await may not properly trigger rebuilds.
+    final remoteService = ref.watch(activeRemoteAiServiceProvider);
+
     // Wait for config to fully load (don't use valueOrNull which returns null while loading)
     final config = await ref.watch(aiConfigStateProvider.future);
 
-    // Create the service based on config
+    // For remote mode, use the per-host RemoteAiService if available.
+    // This bridges the per-host remote AI system to the global service.
+    if (config.mode == AiMode.remote) {
+      if (remoteService != null) {
+        _currentService = remoteService;
+        _isRemoteService = true;
+        debugPrint(
+          '[AiServiceController] Using remote service: '
+          '${remoteService.serviceName}',
+        );
+        return remoteService;
+      }
+
+      // Remote mode but no service available yet. Return UnconfiguredAiService
+      // directly — don't fall through to the factory which would also return
+      // UnconfiguredAiService but through a longer path. The watch on
+      // activeRemoteAiServiceProvider (keepAlive) ensures this build() will
+      // be re-triggered when the remote service becomes available.
+      //
+      // NOTE: We intentionally removed a ref.read(activeRemoteHostIdProvider)
+      // fallback that was here before. Using ref.read() after an await is a
+      // Riverpod anti-pattern — the provider may have been invalidated during
+      // the await, making the read stale. The ref.watch() on
+      // activeRemoteAiServiceProvider (established before the await) is the
+      // correct mechanism and is sufficient with keepAlive: true.
+      debugPrint(
+        '[AiServiceController] Remote mode but no service available yet '
+        '— will rebuild when activeRemoteAiServiceProvider changes',
+      );
+      final unconfigured = const UnconfiguredAiService();
+      _currentService = unconfigured;
+      return unconfigured;
+    }
+
+    // Create the service based on config (local, cloud, or fallback)
     final service = await factory.createService(
       config,
       configRepository: configRepository,
@@ -173,12 +216,18 @@ class AiServiceController extends _$AiServiceController {
 
     // Register cleanup - this is safe now since provider is keepAlive
     ref.onDispose(() {
-      _currentService?.dispose();
+      if (!_isRemoteService) {
+        _currentService?.dispose();
+      }
       _currentService = null;
     });
 
     return service;
   }
+
+  /// Whether the current service is a remote service (owned by RemoteAiServiceController).
+  /// We don't dispose remote services here — they're managed per-host.
+  bool _isRemoteService = false;
 }
 
 /// Convenience provider that returns the current AI service synchronously.
@@ -233,11 +282,29 @@ class AiInput extends _$AiInput {
 
 /// Provider for the current AI privacy mode.
 ///
-/// Reads from the current AI service. Updates automatically when
-/// the service changes.
+/// Reads from the current AI service, but if the service is unconfigured,
+/// derives the mode from the saved config (so "Remote" still shows in the
+/// badge even while the remote service is initializing).
 @riverpod
 AiPrivacyMode aiPrivacyMode(Ref ref) {
   final service = ref.watch(aiServiceProvider);
+
+  // If the service reports a real mode, use it
+  if (service is! UnconfiguredAiService) {
+    return service.privacyMode;
+  }
+
+  // Service is unconfigured — check what mode the user actually selected
+  final config = ref.watch(aiConfigStateProvider).valueOrNull;
+  if (config != null) {
+    return switch (config.mode) {
+      AiMode.local => AiPrivacyMode.local,
+      AiMode.cloud => AiPrivacyMode.cloud,
+      AiMode.remote => AiPrivacyMode.remote,
+      AiMode.unconfigured => AiPrivacyMode.local,
+    };
+  }
+
   return service.privacyMode;
 }
 

@@ -29,7 +29,8 @@ void main() {
 
     setUp(() {
       container = ProviderContainer();
-      blockController = container.read(blockListControllerProvider.notifier);
+      blockController =
+          container.read(blockListControllerProvider('test-session').notifier);
       tuiDetector = TuiModeDetector(
         debounceDuration: const Duration(milliseconds: 10), // Fast for tests
       );

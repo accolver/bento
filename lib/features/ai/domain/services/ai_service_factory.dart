@@ -1,9 +1,17 @@
 // @telos L1:function:lib/features/ai/domain/services:ai_service_factory
 
+import 'package:dartssh2/dartssh2.dart';
+
 import '../entities/ai_config.dart';
+import '../entities/remote_ai_detection.dart';
+import '../entities/remote_ai_provider.dart';
 import '../../data/repositories/ai_config_repository.dart';
 import '../../data/services/cloud_ai_service.dart';
+import '../../data/services/cloud_proxy_backend.dart';
 import '../../data/services/local_ai_service.dart';
+import '../../data/services/ollama_backend.dart';
+import '../../data/services/remote_ai_service.dart';
+import '../../data/services/remote_backend.dart';
 import '../../data/services/unconfigured_ai_service.dart';
 import 'ai_service.dart';
 
@@ -153,23 +161,100 @@ class AiServiceFactory {
     );
   }
 
-  /// Create a remote AI service using Ollama over SSH.
+  /// Create a remote AI service using detected providers over SSH.
   ///
-  /// [sshSession] - Active SSH connection.
-  /// [modelName] - Optional specific model to use.
+  /// [client] - Active SSH client connection.
+  /// [detectionResult] - Result from [RemoteAiDetector] scan.
+  /// [preferredProvider] - Optional preferred cloud provider.
+  /// [preferredOllamaModel] - Optional preferred Ollama model name.
   ///
-  /// Throws [AiServiceException] if Ollama is not detected on the server.
+  /// Selects the best available backend based on:
+  /// 1. User's saved preference (if still available)
+  /// 2. Best cloud provider by quality rank
+  /// 3. First available Ollama model
   ///
-  /// **Note**: Implementation will be added in `remote-ai-ollama` change.
-  /// Currently throws to fall back to mock.
+  /// Throws [AiServiceException] if no providers were detected.
   Future<AiService> createRemoteService(
     dynamic sshSession, [
     String? modelName,
+    RemoteAiDetectionResult? detectionResult,
   ]) async {
-    // TODO: Implement in remote-ai-ollama change
-    throw AiServiceException(
-      'Remote AI not yet implemented',
-      code: 'not_implemented',
+    if (sshSession is! SSHClient) {
+      throw const AiServiceException(
+        'Invalid SSH session type for remote AI',
+        code: 'invalid_session',
+      );
+    }
+
+    final client = sshSession;
+
+    // If no detection result provided, we can't create a service
+    if (detectionResult == null || !detectionResult.hasAnyProvider) {
+      throw const AiServiceException(
+        'No AI providers detected on remote host',
+        code: 'no_providers',
+      );
+    }
+
+    // Determine backend based on what's available
+    final backend = _selectBestBackend(
+      detectionResult,
+      preferredModel: modelName,
+    );
+
+    return RemoteAiService(
+      client: client,
+      backend: backend,
+    );
+  }
+
+  /// Select the best backend from detection results.
+  ///
+  /// Priority:
+  /// 1. If [preferredModel] is set and Ollama has it, use Ollama
+  /// 2. If cloud providers are detected, use the best-ranked one
+  /// 3. Fall back to first Ollama model
+  RemoteBackend _selectBestBackend(
+    RemoteAiDetectionResult result, {
+    String? preferredModel,
+  }) {
+    // Check if user wants a specific Ollama model
+    if (preferredModel != null && result.hasOllama) {
+      final hasModel = result.ollamaModels.any(
+        (m) => m.name == preferredModel,
+      );
+      if (hasModel) {
+        return OllamaBackend(
+          selectedModel: preferredModel,
+          availableModels: result.ollamaModels,
+        );
+      }
+    }
+
+    // Prefer cloud providers (ranked by quality)
+    if (result.hasCloudProviders) {
+      final best = result.bestCloudProvider!;
+      final config = RemoteProviderRegistry.forProvider(best.provider);
+      if (config != null) {
+        return CloudProxyBackend(
+          providerConfig: config,
+          envVarName: best.envVarName,
+        );
+      }
+    }
+
+    // Fall back to Ollama
+    if (result.hasOllama) {
+      return OllamaBackend(
+        selectedModel: result.ollamaModels.first.name,
+        availableModels: result.ollamaModels,
+      );
+    }
+
+    // Should not reach here given hasAnyProvider check above
+    throw const AiServiceException(
+      'No usable AI backend found',
+      code: 'no_backend',
     );
   }
 

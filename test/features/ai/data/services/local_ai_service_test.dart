@@ -259,11 +259,13 @@ void main() {
       test('uses sensible defaults', () {
         final service = LocalAiService(modelPath: testModelFile.path);
 
-        expect(service.contextSize, equals(2048));
-        expect(service.maxTokens, equals(64)); // Reduced for speed
+        expect(
+            service.contextSize, equals(512)); // Small context to minimize RAM
+        expect(service.maxTokens, equals(64)); // Commands are short
         expect(service.temperature, equals(0.1)); // Lower for determinism
-        expect(service.nThreads, equals(4));
-        expect(service.useGpu, isTrue);
+        expect(service.nThreads,
+            equals(2)); // Fewer threads = less memory pressure
+        expect(service.useGpu, isFalse); // Disabled for compatibility
       });
     });
   });

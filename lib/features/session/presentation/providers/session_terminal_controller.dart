@@ -16,6 +16,7 @@ import '../../../ai/presentation/providers/remote_ai_providers.dart';
 import '../../../terminal/data/datasources/ssh_datasource.dart';
 import '../../../terminal/domain/entities/ssh_connection_config.dart';
 import '../../../terminal/domain/entities/terminal_config.dart';
+import '../../../terminal/presentation/providers/output_router_provider.dart';
 import '../../../terminal/presentation/providers/terminal_config_provider.dart';
 import 'session_list_controller.dart';
 import '../../domain/entities/session_status.dart';
@@ -59,6 +60,17 @@ class SessionTerminalController extends _$SessionTerminalController {
       // OpenCode, etc.) receive a literal newline instead of a submit action.
       // Only transform a bare \n — don't touch \r\n which is already correct.
       final transformed = data == '\n' ? '\r' : data;
+
+      // Route through OutputRouter for command/input tracking when semantic
+      // blocks are enabled. This allows the router to detect Enter presses
+      // and buffer typed characters for block creation.
+      final terminalConfig = ref.read(terminalConfigProvider);
+      if (terminalConfig.enableSemanticBlocks) {
+        ref
+            .read(outputRouterControllerProvider(sessionId).notifier)
+            .processInput(transformed);
+      }
+
       _sshDataSource!.writeString(transformed);
     }
   }
@@ -83,11 +95,23 @@ class SessionTerminalController extends _$SessionTerminalController {
       return result;
     }
 
-    // Wire SSH output to terminal
+    // Wire SSH output to terminal (possibly via OutputRouter for block detection)
+    final terminalConfig = ref.read(terminalConfigProvider);
+
     _outputSubscription = _sshDataSource!.output.listen((data) {
       // Decode UTF-8 properly - SSH sends UTF-8 encoded text
       final output = utf8.decode(data, allowMalformed: true);
-      state.write(output);
+
+      if (terminalConfig.enableSemanticBlocks) {
+        // Route through OutputRouter for prompt/block detection.
+        // The OutputRouter will write to the terminal via its onProcessedOutput callback.
+        ref
+            .read(outputRouterControllerProvider(sessionId).notifier)
+            .processOutput(output);
+      } else {
+        // Classic mode: write directly to terminal
+        state.write(output);
+      }
     });
 
     // Re-attach the onOutput handler to the current terminal

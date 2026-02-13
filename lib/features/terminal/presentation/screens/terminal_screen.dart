@@ -1,5 +1,6 @@
 // @telos L1:function:lib/features/terminal/presentation/screens:terminal_screen
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +27,24 @@ import '../widgets/command_ribbon.dart';
 import '../widgets/modifier_keys_bar.dart';
 import '../widgets/terminal_view.dart';
 import '../widgets/view_mode_toggle.dart';
+
+/// Determines if the AI FAB should be visible for the given modes.
+///
+/// Hidden only in TUI mode (vim, htop, etc.) to avoid obstructing
+/// full-screen terminal applications. Shown in all three user-selectable
+/// views: blocks, terminal, and split.
+///
+/// Extracted as top-level function for testability.
+@visibleForTesting
+bool shouldShowAiFab(TerminalMode displayMode, ViewMode viewMode) {
+  // Hide in TUI mode (vim, htop, etc.)
+  if (displayMode == TerminalMode.tui) {
+    return false;
+  }
+
+  // Show in all user-selectable views (split, fullTerminal, fullBlocks)
+  return true;
+}
 
 /// Full-screen terminal display with modifier key bar.
 ///
@@ -230,23 +249,9 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     controller.write(text);
   }
 
-  /// Determines if the AI FAB should be visible.
-  ///
-  /// Hidden in TUI mode and full terminal view to avoid obstructing content.
-  bool _shouldShowAiFab(TerminalMode displayMode, ViewMode viewMode) {
-    // Hide in TUI mode (vim, htop, etc.)
-    if (displayMode == TerminalMode.tui) {
-      return false;
-    }
-
-    // Hide in full terminal view
-    if (viewMode == ViewMode.fullTerminal) {
-      return false;
-    }
-
-    // Show in split view and full blocks view
-    return true;
-  }
+  /// Delegates to the top-level [shouldShowAiFab] for testability.
+  bool _shouldShowAiFab(TerminalMode displayMode, ViewMode viewMode) =>
+      shouldShowAiFab(displayMode, viewMode);
 
   /// Shows the AI Ghostwriter bottom sheet panel.
   ///

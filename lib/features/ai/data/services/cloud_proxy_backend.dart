@@ -162,7 +162,16 @@ class CloudProxyBackend extends RemoteBackend {
             }
 
             try {
-              final json = jsonDecode(data) as Map<String, dynamic>;
+              final decoded = jsonDecode(data);
+              // Some providers may return a JSON array; unwrap if needed
+              final Map<String, dynamic> json;
+              if (decoded is Map<String, dynamic>) {
+                json = decoded;
+              } else if (decoded is List && decoded.isNotEmpty) {
+                json = decoded.first as Map<String, dynamic>;
+              } else {
+                continue;
+              }
               final content = _extractStreamDelta(json);
               if (content != null && content.isNotEmpty) {
                 commandBuffer.write(content);
@@ -378,7 +387,11 @@ class CloudProxyBackend extends RemoteBackend {
     if (responseBody.isEmpty) return;
 
     try {
-      final json = jsonDecode(responseBody) as Map<String, dynamic>;
+      final decoded = jsonDecode(responseBody);
+      // Some providers (e.g., Gemini) may return a JSON array at the top level
+      // in certain error scenarios. Only check for errors in Map responses.
+      if (decoded is! Map<String, dynamic>) return;
+      final json = decoded;
 
       // Check for error field (common across providers)
       if (json.containsKey('error')) {
@@ -458,7 +471,32 @@ class CloudProxyBackend extends RemoteBackend {
   /// Extract the text content from a response body (handles both formats).
   String _extractContentFromResponse(String responseBody) {
     try {
-      final json = jsonDecode(responseBody) as Map<String, dynamic>;
+      final decoded = jsonDecode(responseBody);
+
+      // Some providers (e.g., Gemini) may wrap the response in a JSON array.
+      // Unwrap to get the actual response object.
+      final Map<String, dynamic> json;
+      if (decoded is List && decoded.isNotEmpty) {
+        if (decoded.first is Map<String, dynamic>) {
+          json = decoded.first as Map<String, dynamic>;
+        } else {
+          throw RemoteParseException(
+            'Unexpected array response from ${providerConfig.displayName}',
+            rawResponse: responseBody.length > 200
+                ? '${responseBody.substring(0, 200)}...'
+                : responseBody,
+          );
+        }
+      } else if (decoded is Map<String, dynamic>) {
+        json = decoded;
+      } else {
+        throw RemoteParseException(
+          'Unexpected response type from ${providerConfig.displayName}',
+          rawResponse: responseBody.length > 200
+              ? '${responseBody.substring(0, 200)}...'
+              : responseBody,
+        );
+      }
 
       // OpenAI-compatible format
       final choices = json['choices'] as List?;

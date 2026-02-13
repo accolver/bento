@@ -48,6 +48,13 @@ class RemoteAiService implements AiService {
   bool _isConnected;
   bool _isDisposed = false;
 
+  /// The underlying SSH client, if still connected.
+  ///
+  /// Exposed so that callers (e.g., provider re-initialization) can pass
+  /// the client to a new service or backend without needing to re-establish
+  /// the SSH connection.
+  SSHClient? get client => _client;
+
   /// The active backend (Ollama or cloud proxy).
   RemoteBackend get backend => _backend;
 

@@ -14,6 +14,7 @@ import '../widgets/setup_steps/local_download_step.dart';
 import '../widgets/setup_steps/local_model_select_step.dart';
 import '../widgets/setup_steps/mode_selection_step.dart';
 import '../widgets/setup_steps/remote_detect_step.dart';
+import '../../domain/entities/remote_ai_config.dart';
 
 /// Wizard steps for AI setup.
 enum AiSetupStep {
@@ -72,6 +73,7 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
   String? _downloadedModelPath;
   String? _completeModeDescription;
   bool _remoteAutoDetect = true;
+  RemoteProviderSelection? _remoteProviderSelection;
 
   void _goToStep(AiSetupStep step) {
     setState(() {
@@ -145,58 +147,73 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
   }
 
   Future<void> _onRemoteDetectComplete() async {
+    final selection = _remoteProviderSelection;
+
     await ref.read(aiConfigStateProvider.notifier).setRemote(
           remoteAutoDetect: _remoteAutoDetect,
+          modelName: selection?.ollamaModel,
         );
 
-    // Build a mode-specific description based on what was detected.
-    // Try multiple sources to find the active service/detection info.
     final hostId = ref.read(activeRemoteHostIdProvider);
-    if (hostId != null) {
-      // First try the active service
-      var remoteService = ref.read(activeRemoteAiServiceProvider);
-      // Fallback: read service controller directly (keepAlive provider)
-      remoteService ??= ref.read(remoteAiServiceControllerProvider(hostId));
 
+    // If user selected a specific provider, save the per-host config and
+    // re-initialize the service with the chosen backend.
+    if (hostId != null && selection != null) {
+      final config = RemoteAiConfig(
+        hostId: hostId,
+        backendType: selection.backendType,
+        ollamaModel: selection.ollamaModel,
+        cloudProvider: selection.cloudProvider,
+        envVarName: selection.envVarName,
+      );
+      await ref.read(remoteAiConfigStateProvider(hostId).notifier).save(config);
+
+      // Re-initialize the remote service with the user's chosen backend
+      final detectionResult =
+          ref.read(remoteAiDetectionStateProvider(hostId)).valueOrNull;
+      final serviceController =
+          ref.read(remoteAiServiceControllerProvider(hostId).notifier);
+      // Get the SSH client from the existing service, or from the session
+      final existingService =
+          ref.read(remoteAiServiceControllerProvider(hostId));
+      final sshClient = existingService?.client;
+      if (detectionResult != null && sshClient != null) {
+        serviceController.initialize(
+          client: sshClient,
+          detectionResult: detectionResult,
+          config: config,
+        );
+      }
+    }
+
+    // Build a mode-specific description.
+    if (selection != null) {
+      _completeModeDescription = switch (selection.backendType) {
+        RemoteBackendType.ollama =>
+          'Remote AI active via Ollama. Data stays on your infrastructure.',
+        RemoteBackendType.cloudProxy =>
+          'Remote AI active via ${selection.cloudProvider?.name ?? "cloud provider"}. '
+              'API calls routed through your remote host.',
+      };
+    } else if (hostId != null) {
+      // No explicit selection — use whatever auto-selected
+      final remoteService = ref.read(remoteAiServiceControllerProvider(hostId));
       if (remoteService != null) {
         _completeModeDescription =
             'Remote AI active via ${remoteService.backend.displayName}. '
             'Data stays on your infrastructure.';
       } else {
-        // No service yet, but check detection results
-        final detectionResult =
-            ref.read(remoteAiDetectionStateProvider(hostId)).valueOrNull;
-        if (detectionResult != null && detectionResult.hasAnyProvider) {
-          final providerNames = <String>[];
-          if (detectionResult.hasOllama) {
-            providerNames.add(
-              'Ollama (${detectionResult.ollamaModels.first.displayName})',
-            );
-          }
-          if (detectionResult.hasCloudProviders) {
-            providerNames.add(detectionResult.bestCloudProvider!.displayName);
-          }
-          _completeModeDescription = 'Found: ${providerNames.join(", ")}. '
-              'Data stays on your infrastructure.';
-        } else {
-          _completeModeDescription =
-              'Remote AI will detect providers when you connect via SSH.';
-        }
+        _completeModeDescription =
+            'Remote AI will detect providers when you connect via SSH.';
       }
     } else {
       _completeModeDescription =
           'Remote AI will detect providers when you connect via SSH.';
     }
 
-    // Force the bridge providers to re-evaluate from scratch. Without this,
-    // the keepAlive activeRemoteAiServiceProvider may have a cached null
-    // value from before the remote service was initialized, and stale
-    // dependency tracking prevents it from picking up the new state.
+    // Force the bridge providers to re-evaluate from scratch.
     ref.invalidate(activeRemoteAiServiceProvider);
     ref.invalidate(activeRemoteHostIdProvider);
-
-    // Now invalidate the AI service controller to force a rebuild that
-    // picks up the newly configured remote mode with fresh provider values.
     ref.invalidate(aiServiceControllerProvider);
 
     _goToStep(AiSetupStep.complete);
@@ -291,6 +308,9 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
           onComplete: _onRemoteDetectComplete,
           onAutoDetectChanged: (value) {
             _remoteAutoDetect = value;
+          },
+          onProviderSelected: (selection) {
+            _remoteProviderSelection = selection;
           },
         ),
       AiSetupStep.complete => CompleteStep(

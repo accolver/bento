@@ -938,5 +938,141 @@ void main() {
         verify(() => mockController.createBlock('working')).called(1);
       });
     });
+
+    // =========================================================================
+    // Regression: processOutput must be called for blocks to work
+    // =========================================================================
+    //
+    // Bug history:
+    //   - SessionTerminalController was writing SSH output directly to the
+    //     xterm Terminal via state.write(), bypassing OutputRouter.processOutput().
+    //     Without processOutput, prompts were never detected, _atPrompt was
+    //     never set to true, and blocks could never be created.
+    //
+    //   - Similarly, user keystroke input was not being routed through
+    //     processInput(), so the input buffer was always empty.
+    //
+    // These tests document the contract that both processOutput AND processInput
+    // must be called for the block creation pipeline to work.
+    // =========================================================================
+
+    group(
+        'regression: full pipeline requires both processOutput and processInput',
+        () {
+      // @telos-scenario L1:...:output_router:regression-no-output-no-blocks
+      test('blocks are NEVER created if processOutput is not called', () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // User types "ls" and presses Enter — but NO processOutput was ever
+        // called, so the router never saw a prompt and _atPrompt is false.
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        // No block should be created because processOutput was never called
+        // to detect a prompt.
+        verifyNever(() => mockController.createBlock(any()));
+      });
+
+      // @telos-scenario L1:...:output_router:regression-output-then-input-creates-block
+      test(
+          'blocks ARE created when processOutput detects prompt then processInput receives command',
+          () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // SSH output arrives with a prompt — this sets _atPrompt = true
+        router.processOutput('user@host:~\$ ');
+
+        // User types "ls" and presses Enter via processInput
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\r');
+
+        // Block should be created because both output (prompt) and input
+        // (command + Enter) were routed through the router.
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:regression-output-echo-creates-block
+      test(
+          'processOutput creates blocks from echoed commands (server-side echo path)',
+          () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // SSH output arrives with prompt followed by echoed command
+        // This is the output-based detection path — the server echoes back
+        // the command the user typed, and processOutput sees it.
+        router.processOutput('user@host:~\$ ls\n');
+
+        // The router creates a block from the echoed command in processOutput.
+        // This path works even without processInput — it's the server-echo path.
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:regression-multiple-commands-full-pipeline
+      test(
+          'full pipeline: multiple commands work when both output and input are routed',
+          () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // --- Command 1: ls ---
+        router.processOutput('user@host:~\$ ');
+        for (final c in 'ls'.split('')) {
+          router.processInput(c);
+        }
+        router.processInput('\r');
+        verify(() => mockController.createBlock('ls')).called(1);
+
+        // Simulate command output
+        when(() => mockController.hasActiveBlock).thenReturn(true);
+        router.processOutput('file1.txt  file2.txt\n');
+
+        // --- Command 2: pwd ---
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+        router.processOutput('user@host:~\$ ');
+        for (final c in 'pwd'.split('')) {
+          router.processInput(c);
+        }
+        router.processInput('\r');
+        verify(() => mockController.createBlock('pwd')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:regression-cr-creates-block
+      test('CR (\\r) from mobile keyboard creates block after prompt detection',
+          () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt detected via processOutput
+        router.processOutput('❯ ');
+
+        // User types and presses Enter (CR from mobile keyboard, after LF→CR transform)
+        router.processInput('e');
+        router.processInput('c');
+        router.processInput('h');
+        router.processInput('o');
+        router.processInput(' ');
+        router.processInput('h');
+        router.processInput('i');
+        router.processInput('\r'); // CR, not LF
+
+        verify(() => mockController.createBlock('echo hi')).called(1);
+      });
+
+      // @telos-scenario L1:...:output_router:regression-lf-also-creates-block
+      test('LF (\\n) also creates block (fallback for non-transformed path)',
+          () {
+        when(() => mockController.hasActiveBlock).thenReturn(false);
+
+        // Prompt detected via processOutput
+        router.processOutput('❯ ');
+
+        // processInput receives LF (in case transform didn't happen)
+        router.processInput('l');
+        router.processInput('s');
+        router.processInput('\n');
+
+        verify(() => mockController.createBlock('ls')).called(1);
+      });
+    });
   });
 }

@@ -107,6 +107,13 @@ class _ModifierKeysBarState extends State<ModifierKeysBar>
                   onTap: () => _sendKey('\t'),
                 ),
 
+                // Enter key — explicit CR for TUI apps where soft keyboard
+                // Enter may not work reliably
+                _buildKey(
+                  icon: Icons.keyboard_return,
+                  onTap: () => _sendKey('\r'),
+                ),
+
                 const Spacer(),
 
                 // Arrow keys

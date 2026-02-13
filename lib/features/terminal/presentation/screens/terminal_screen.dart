@@ -322,8 +322,9 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       outputRouter.processInput('\n');
     }
 
-    // Write the command to the terminal
-    controller.write('$command\n');
+    // Write the command to the terminal (use \r for CR, not \n — terminals
+    // expect carriage return to submit, not line feed)
+    controller.write('$command\r');
 
     // Request focus back on the terminal view after a short delay
     // to allow the bottom sheet dismissal animation to complete
@@ -626,10 +627,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   void _handleRerunCommand(String command) {
-    // Re-execute the command via per-session controller
+    // Re-execute the command via per-session controller (use \r for CR)
     final controller =
         ref.read(sessionTerminalControllerProvider(widget.sessionId).notifier);
-    controller.write('$command\n');
+    controller.write('$command\r');
   }
 
   void _handleResize(TerminalDimensions dimensions) {

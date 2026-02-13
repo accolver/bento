@@ -54,7 +54,12 @@ class SessionTerminalController extends _$SessionTerminalController {
   /// Handles output from the terminal (user keystrokes)
   void _handleTerminalOutput(String data) {
     if (_sshDataSource?.isConnected ?? false) {
-      _sshDataSource!.writeString(data);
+      // Transform newlines: mobile soft keyboards send LF (\n) for Enter,
+      // but terminals expect CR (\r). Without this, TUI apps (vim, htop,
+      // OpenCode, etc.) receive a literal newline instead of a submit action.
+      // Only transform a bare \n — don't touch \r\n which is already correct.
+      final transformed = data == '\n' ? '\r' : data;
+      _sshDataSource!.writeString(transformed);
     }
   }
 

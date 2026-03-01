@@ -7,6 +7,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/ai_suggestion.dart';
+import '../../domain/entities/remote_ai_detection.dart';
 import '../../domain/entities/remote_ai_provider.dart';
 import '../../domain/services/ai_service.dart';
 import '../../domain/services/prompt_templates.dart';
@@ -59,6 +60,7 @@ class CloudProxyBackend extends RemoteBackend {
   CloudProxyBackend({
     required this.providerConfig,
     required this.envVarName,
+    this.detectionMethod = RemoteDetectionMethod.direct,
     this.maxTokens = 256,
     this.temperature = 0.3,
   });
@@ -68,6 +70,13 @@ class CloudProxyBackend extends RemoteBackend {
 
   /// Which environment variable holds the API key on the remote host.
   final String envVarName;
+
+  /// How env vars were detected (direct exec vs login shell).
+  ///
+  /// When detection required a login/interactive shell to find the env var,
+  /// the API curl command must also be wrapped in the same shell mode —
+  /// otherwise the env var won't be available in the bare SSH exec context.
+  final RemoteDetectionMethod detectionMethod;
 
   /// Maximum tokens to generate.
   final int maxTokens;
@@ -258,6 +267,10 @@ class CloudProxyBackend extends RemoteBackend {
   ///
   /// Key insight: `\$${envVarName}` is expanded by the remote shell,
   /// so the actual API key value never appears in Bento's memory.
+  ///
+  /// If the env var was detected via a login/interactive shell fallback,
+  /// the curl command is wrapped in the same shell mode so the variable
+  /// is available during execution.
   String _buildCurlCommand({
     required String systemPrompt,
     required String userPrompt,
@@ -270,11 +283,38 @@ class CloudProxyBackend extends RemoteBackend {
     );
     final escapedBody = ShellEscape.escape(jsonEncode(body));
 
+    String curl;
     switch (providerConfig.apiFormat) {
       case ApiFormat.openaiCompatible:
-        return _buildOpenAiCurl(escapedBody, stream);
+        curl = _buildOpenAiCurl(escapedBody, stream);
       case ApiFormat.anthropicMessages:
-        return _buildAnthropicCurl(escapedBody, stream);
+        curl = _buildAnthropicCurl(escapedBody, stream);
+    }
+
+    return _wrapInShellIfNeeded(curl);
+  }
+
+  /// Wrap the command in the same shell mode that detected the env var.
+  ///
+  /// SSH `exec` channels use a bare, non-interactive, non-login shell by
+  /// default. Env vars set in `~/.bashrc` or `~/.zshrc` are only available
+  /// in interactive shells. If detection needed a fallback shell mode, the
+  /// API call must use the same mode.
+  String _wrapInShellIfNeeded(String command) {
+    // Escape single quotes for nesting inside bash/zsh -c '...'
+    String escapeForShell(String cmd) => cmd.replaceAll("'", "'\\''");
+
+    switch (detectionMethod) {
+      case RemoteDetectionMethod.direct:
+        return command;
+      case RemoteDetectionMethod.bashLogin:
+        return "bash -l -c '${escapeForShell(command)}'";
+      case RemoteDetectionMethod.zshLogin:
+        return "zsh -l -c '${escapeForShell(command)}'";
+      case RemoteDetectionMethod.bashInteractiveLogin:
+        return "bash -li -c '${escapeForShell(command)}'";
+      case RemoteDetectionMethod.zshInteractiveLogin:
+        return "zsh -li -c '${escapeForShell(command)}'";
     }
   }
 
@@ -400,7 +440,14 @@ class CloudProxyBackend extends RemoteBackend {
             ? (error['message'] as String? ?? error.toString())
             : error.toString();
         final type = error is Map ? (error['type'] as String?) : null;
-        final status = error is Map ? (error['status'] as int?) : null;
+        // Status may be int (Anthropic) or string (Google: "UNAUTHENTICATED")
+        final rawStatus = error is Map ? error['status'] : null;
+        final status = rawStatus is int
+            ? rawStatus
+            : rawStatus is String
+                ? int.tryParse(rawStatus)
+                : null;
+        final statusStr = rawStatus is String ? rawStatus.toLowerCase() : null;
 
         // Rate limit detection
         if (type == 'rate_limit_error' ||
@@ -418,8 +465,10 @@ class CloudProxyBackend extends RemoteBackend {
         // Auth failure detection
         if (type == 'authentication_error' ||
             status == 401 ||
+            statusStr == 'unauthenticated' ||
             message.toLowerCase().contains('invalid api key') ||
-            message.toLowerCase().contains('unauthorized')) {
+            message.toLowerCase().contains('unauthorized') ||
+            message.toLowerCase().contains('api key not valid')) {
           throw RemoteApiException(
             '${providerConfig.displayName}: Authentication failed. '
             'Check that the API key is valid on the remote host.',

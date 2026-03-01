@@ -313,6 +313,7 @@ class RemoteAiServiceController extends _$RemoteAiServiceController {
               return CloudProxyBackend(
                 providerConfig: providerConfig,
                 envVarName: config.envVarName!,
+                detectionMethod: result.detectionMethod,
               );
             }
           }
@@ -333,6 +334,7 @@ class RemoteAiServiceController extends _$RemoteAiServiceController {
         return CloudProxyBackend(
           providerConfig: providerConfig,
           envVarName: best.envVarName,
+          detectionMethod: result.detectionMethod,
         );
       }
     }

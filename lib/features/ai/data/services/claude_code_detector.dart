@@ -43,27 +43,20 @@ class ClaudeCodeDetector {
   /// 1. Check if `claude` CLI is in PATH (`command -v claude`)
   /// 2. Verify it has a valid session (`claude --print-access-token`)
   /// 3. Get version string (`claude --version`)
+  ///
+  /// Each step wraps the ENTIRE flow (execute + collect output + exit code)
+  /// in a single timeout to prevent hanging if the remote process stalls.
   Future<ClaudeCodeDetectionResult> detect(SSHClient client) async {
     try {
-      // Check if claude CLI exists in PATH
-      const detectionCmd =
-          'command -v claude >/dev/null 2>&1 && echo "$_sentinel"';
-
-      final session = await client
-          .execute(detectionCmd)
-          .timeout(const Duration(seconds: 10));
-
-      final stdout = await SshUtils.collectOutput(session.stdout);
-      final exitCode = await session.exitCode;
-
-      if (exitCode != 0 || !stdout.contains(_sentinel)) {
-        debugPrint('[ClaudeCodeDetector] CLI not found (exit=$exitCode)');
+      // Step 1: Check if claude CLI exists in PATH
+      final cliFound = await _checkCliExists(client);
+      if (!cliFound) {
         return ClaudeCodeDetectionResult.notDetected;
       }
 
       debugPrint('[ClaudeCodeDetector] CLI found, checking auth...');
 
-      // Verify the session is authenticated by trying to get an access token
+      // Step 2: Verify authenticated session
       final hasAuth = await _hasValidAuth(client);
       if (!hasAuth) {
         debugPrint('[ClaudeCodeDetector] CLI found but not authenticated');
@@ -71,6 +64,8 @@ class ClaudeCodeDetector {
       }
 
       debugPrint('[ClaudeCodeDetector] Found authenticated Claude Code');
+
+      // Step 3: Get version (non-critical)
       final version = await _getVersion(client);
 
       return ClaudeCodeDetectionResult(
@@ -86,39 +81,73 @@ class ClaudeCodeDetector {
     }
   }
 
+  /// Check if `claude` CLI is in PATH on the remote host.
+  ///
+  /// Wraps the entire flow (execute + stdout + exitCode) in a single
+  /// 10-second timeout to prevent hanging.
+  Future<bool> _checkCliExists(SSHClient client) async {
+    try {
+      return await Future(() async {
+        const detectionCmd =
+            'command -v claude >/dev/null 2>&1 && echo "$_sentinel"';
+
+        final session = await client.execute(detectionCmd);
+        final stdout = await SshUtils.collectOutput(session.stdout);
+        final exitCode = await session.exitCode;
+
+        if (exitCode != 0 || !stdout.contains(_sentinel)) {
+          debugPrint('[ClaudeCodeDetector] CLI not found (exit=$exitCode)');
+          return false;
+        }
+        return true;
+      }).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      debugPrint('[ClaudeCodeDetector] CLI check timed out');
+      return false;
+    } catch (e) {
+      debugPrint('[ClaudeCodeDetector] CLI check error: $e');
+      return false;
+    }
+  }
+
   /// Check if Claude Code has a valid authenticated session.
   ///
   /// Runs `claude --print-access-token` which returns a token if
   /// the user is logged in. We don't read the token value — just
   /// check that the command succeeds (exit 0) and produces output.
+  ///
+  /// Wraps the entire flow in a single 10-second timeout.
   Future<bool> _hasValidAuth(SSHClient client) async {
     try {
-      final session = await client
-          .execute('claude --print-access-token 2>/dev/null | '
-              'grep -c . >/dev/null 2>&1 && echo "AUTH_OK"')
-          .timeout(const Duration(seconds: 10));
-
-      final stdout = await SshUtils.collectOutput(session.stdout);
-      return stdout.contains('AUTH_OK');
+      return await Future(() async {
+        final session = await client.execute(
+          'claude --print-access-token 2>/dev/null | '
+          'grep -c . >/dev/null 2>&1 && echo "AUTH_OK"',
+        );
+        final stdout = await SshUtils.collectOutput(session.stdout);
+        return stdout.contains('AUTH_OK');
+      }).timeout(const Duration(seconds: 10));
     } catch (_) {
       return false;
     }
   }
 
+  /// Get Claude Code version string.
+  ///
+  /// Wraps the entire flow in a single 5-second timeout.
   Future<String?> _getVersion(SSHClient client) async {
     try {
-      final session = await client
-          .execute('claude --version 2>/dev/null')
-          .timeout(const Duration(seconds: 5));
+      return await Future(() async {
+        final session = await client.execute('claude --version 2>/dev/null');
+        final stdout = await SshUtils.collectOutput(session.stdout);
+        final exitCode = await session.exitCode;
 
-      final stdout = await SshUtils.collectOutput(session.stdout);
-      final exitCode = await session.exitCode;
+        if (exitCode != 0) return null;
 
-      if (exitCode != 0) return null;
-
-      final version = stdout.trim();
-      if (version.isEmpty || version == 'unknown') return null;
-      return version;
+        final version = stdout.trim();
+        if (version.isEmpty || version == 'unknown') return null;
+        return version;
+      }).timeout(const Duration(seconds: 5));
     } catch (_) {
       return null;
     }

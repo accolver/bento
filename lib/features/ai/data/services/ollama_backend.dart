@@ -74,13 +74,14 @@ class OllamaBackend extends RemoteBackend {
 
     final session = await client
         .execute(
-          'curl -s localhost:$port/v1/chat/completions '
+          'curl -s --max-time 25 localhost:$port/v1/chat/completions '
           '-H "Content-Type: application/json" '
           "-d '$escaped'",
         )
         .timeout(const Duration(seconds: 30));
 
-    final stdout = await SshUtils.collectOutput(session.stdout);
+    final stdout = await SshUtils.collectOutput(session.stdout)
+        .timeout(const Duration(seconds: 30));
     final exitCode = await session.exitCode;
 
     if (exitCode != 0) {
@@ -207,13 +208,14 @@ class OllamaBackend extends RemoteBackend {
 
     final session = await client
         .execute(
-          'curl -s localhost:$port/v1/chat/completions '
+          'curl -s --max-time 25 localhost:$port/v1/chat/completions '
           '-H "Content-Type: application/json" '
           "-d '$escaped'",
         )
         .timeout(const Duration(seconds: 30));
 
-    final stdout = await SshUtils.collectOutput(session.stdout);
+    final stdout = await SshUtils.collectOutput(session.stdout)
+        .timeout(const Duration(seconds: 30));
     final exitCode = await session.exitCode;
 
     if (exitCode != 0) {

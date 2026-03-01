@@ -162,7 +162,9 @@ void main() {
         final captured = verify(() => client.execute(captureAny())).captured;
         final command = captured.first as String;
         expect(
-            command, contains('curl -s localhost:11434/v1/chat/completions'));
+            command,
+            contains(
+                'curl -s --max-time 25 localhost:11434/v1/chat/completions'));
         expect(command, contains('-H "Content-Type: application/json"'));
         expect(command, contains("-d '"));
       });

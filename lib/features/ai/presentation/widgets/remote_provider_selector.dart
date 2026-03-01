@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/services/claude_code_proxy_backend.dart';
 import '../../data/services/cloud_proxy_backend.dart';
 import '../../data/services/ollama_backend.dart';
 import '../../data/services/remote_ai_service.dart';
@@ -94,9 +95,22 @@ class RemoteProviderSelector extends ConsumerWidget {
                   vertical: 8,
                 ),
                 children: [
+                  // Claude Code (highest priority)
+                  if (detectionResult.claudeCodeDetected) ...[
+                    const _SectionHeader(
+                      title: 'Claude Code',
+                      subtitle: 'OAuth session on remote host',
+                    ),
+                    _ClaudeCodeTile(
+                      version: detectionResult.claudeCodeVersion,
+                      isActive: _isClaudeCodeActive(currentService),
+                      onTap: () => _selectClaudeCode(ref),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   // Cloud providers (sorted by quality rank)
                   if (detectionResult.hasCloudProviders) ...[
-                    _SectionHeader(
+                    const _SectionHeader(
                       title: 'Cloud Providers',
                       subtitle: 'Keys on remote host',
                     ),
@@ -114,7 +128,7 @@ class RemoteProviderSelector extends ConsumerWidget {
                   if (detectionResult.hasOllama) ...[
                     if (detectionResult.hasCloudProviders)
                       const SizedBox(height: 16),
-                    _SectionHeader(
+                    const _SectionHeader(
                       title: 'Ollama',
                       subtitle: 'Local inference on server',
                     ),
@@ -133,6 +147,11 @@ class RemoteProviderSelector extends ConsumerWidget {
         );
       },
     );
+  }
+
+  bool _isClaudeCodeActive(RemoteAiService? service) {
+    if (service == null) return false;
+    return service.backend is ClaudeCodeProxyBackend;
   }
 
   bool _isCloudActive(
@@ -195,6 +214,21 @@ class RemoteProviderSelector extends ConsumerWidget {
             backendType: RemoteBackendType.ollama,
             ollamaModel: model.name,
           ),
+        );
+
+    onSelected?.call();
+  }
+
+  void _selectClaudeCode(WidgetRef ref) {
+    final backend = ClaudeCodeProxyBackend();
+
+    ref
+        .read(remoteAiServiceControllerProvider(hostId).notifier)
+        .switchBackend(backend);
+
+    // Save preference
+    ref.read(remoteAiConfigStateProvider(hostId).notifier).save(
+          RemoteAiConfig.claudeCode(hostId: hostId),
         );
 
     onSelected?.call();
@@ -331,6 +365,129 @@ class _CloudProviderTile extends StatelessWidget {
                     ),
                     Text(
                       'via \$${provider.envVarName}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Privacy badge
+              _PrivacyBadge(
+                label: 'Cloud via remote',
+                color: theme.colorScheme.tertiary,
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClaudeCodeTile extends StatelessWidget {
+  const _ClaudeCodeTile({
+    required this.version,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final String? version;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: isActive
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant,
+          width: isActive ? 2 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              // Claude Code icon
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? Colors.deepOrange.withValues(alpha: 0.15)
+                      : theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.auto_awesome,
+                  size: 20,
+                  color: isActive
+                      ? Colors.deepOrange
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Claude Code info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Claude Code',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // "Best" badge — Claude Code is rank 0
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Best',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      version != null
+                          ? 'v$version · OAuth session'
+                          : 'OAuth session',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                         fontFamily: 'monospace',

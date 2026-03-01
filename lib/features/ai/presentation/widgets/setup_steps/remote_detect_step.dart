@@ -254,6 +254,8 @@ class _RemoteDetectStepState extends ConsumerState<RemoteDetectStep> {
         return config.ollamaModel != null
             ? 'ollama:${config.ollamaModel}'
             : null;
+      case RemoteBackendType.claudeCode:
+        return 'claude-code';
     }
   }
 

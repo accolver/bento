@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/services/claude_code_proxy_backend.dart';
 import '../../data/services/cloud_proxy_backend.dart';
 import '../../data/services/ollama_backend.dart';
 import '../../data/services/remote_ai_detector.dart';
@@ -292,6 +293,10 @@ class RemoteAiServiceController extends _$RemoteAiServiceController {
     // If user has a saved config, use it
     if (config != null) {
       switch (config.backendType) {
+        case RemoteBackendType.claudeCode:
+          if (result.claudeCodeDetected) {
+            return ClaudeCodeProxyBackend();
+          }
         case RemoteBackendType.ollama:
           if (config.ollamaModel != null && result.hasOllama) {
             return OllamaBackend(
@@ -312,6 +317,12 @@ class RemoteAiServiceController extends _$RemoteAiServiceController {
             }
           }
       }
+    }
+
+    // Auto-select Claude Code as highest priority
+    if (result.claudeCodeDetected) {
+      debugPrint('[RemoteAiServiceController] Auto-selecting Claude Code');
+      return ClaudeCodeProxyBackend();
     }
 
     // Auto-select: prefer cloud providers (ranked), then Ollama

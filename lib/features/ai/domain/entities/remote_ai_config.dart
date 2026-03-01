@@ -18,6 +18,12 @@ enum RemoteBackendType {
   /// API calls are executed on the remote host using its env var API keys.
   /// Keys never transit to Bento — expanded by the remote shell.
   cloudProxy,
+
+  /// Claude Code CLI detected on the remote host.
+  ///
+  /// Uses OAuth credentials from `~/.claude/.credentials` to proxy
+  /// Anthropic API calls through the remote host. Tokens are key-opaque.
+  claudeCode,
 }
 
 /// Per-host remote AI configuration.
@@ -59,6 +65,8 @@ class RemoteAiConfig with _$RemoteAiConfig {
         return ollamaModel != null;
       case RemoteBackendType.cloudProxy:
         return cloudProvider != null && envVarName != null;
+      case RemoteBackendType.claudeCode:
+        return true; // No additional config needed
     }
   }
 
@@ -86,5 +94,14 @@ class RemoteAiConfig with _$RemoteAiConfig {
         backendType: RemoteBackendType.cloudProxy,
         cloudProvider: provider,
         envVarName: envVarName,
+      );
+
+  /// Creates a config for a Claude Code backend.
+  factory RemoteAiConfig.claudeCode({
+    required String hostId,
+  }) =>
+      RemoteAiConfig(
+        hostId: hostId,
+        backendType: RemoteBackendType.claudeCode,
       );
 }

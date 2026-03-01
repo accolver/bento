@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/services/claude_code_proxy_backend.dart';
 import '../../data/services/cloud_proxy_backend.dart';
 import '../../data/services/ollama_backend.dart';
 import '../providers/remote_ai_providers.dart';
@@ -45,6 +46,10 @@ class RemoteAiStatus extends ConsumerWidget {
       icon = Icons.cloud_off;
       statusColor = theme.colorScheme.error;
       label = 'Disconnected';
+    } else if (service.backend is ClaudeCodeProxyBackend) {
+      icon = Icons.auto_awesome;
+      statusColor = Colors.deepOrange;
+      label = 'Claude Code';
     } else if (service.backend is OllamaBackend) {
       icon = Icons.memory;
       statusColor = theme.colorScheme.secondary;

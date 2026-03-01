@@ -194,6 +194,8 @@ class _AiSetupWizardState extends ConsumerState<AiSetupWizard> {
         RemoteBackendType.cloudProxy =>
           'Remote AI active via ${selection.cloudProvider?.name ?? "cloud provider"}. '
               'API calls routed through your remote host.',
+        RemoteBackendType.claudeCode => 'Remote AI active via Claude Code. '
+            'API calls routed through your remote host.',
       };
     } else if (hostId != null) {
       // No explicit selection — use whatever auto-selected

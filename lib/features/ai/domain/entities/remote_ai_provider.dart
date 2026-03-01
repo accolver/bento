@@ -5,6 +5,9 @@
 /// Each provider maps to one or more environment variable names that
 /// indicate the user has configured API access to that provider.
 enum RemoteCloudProvider {
+  /// Claude Code — OAuth-based Anthropic access via installed CLI
+  claudeCode,
+
   /// Anthropic — Claude models, best reasoning for terminal commands
   anthropic,
 
@@ -135,6 +138,18 @@ class RemoteProviderRegistry {
 
   /// All known provider configurations, ordered by quality rank.
   static const List<RemoteProviderConfig> providers = [
+    // Rank 0: Claude Code — detected via ~/.claude/.credentials file, not env vars
+    RemoteProviderConfig(
+      provider: RemoteCloudProvider.claudeCode,
+      envVars: [],
+      displayName: 'Claude Code',
+      apiBaseUrl: 'https://api.anthropic.com',
+      defaultModel: 'claude-sonnet-4-5-20250514',
+      apiFormat: ApiFormat.anthropicMessages,
+      authHeaderName: 'Authorization',
+      authHeaderFormat: r'Bearer $KEY',
+      qualityRank: 0,
+    ),
     // Rank 1: Anthropic — best reasoning for terminal commands
     RemoteProviderConfig(
       provider: RemoteCloudProvider.anthropic,

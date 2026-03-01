@@ -7,7 +7,7 @@ flutter = "latest"
 
 [env]
 # Device IDs for Pixel 9 Pro
-BENTO_DEVICE_WIRELESS = "adb-4C091FDAP0032A-QXeCd8._adb-tls-connect._tcp"
+BENTO_DEVICE_WIRELESS = "100.126.177.104:43455"
 BENTO_DEVICE_WIRED = "4C091FDAP0032A"
 
 # =============================================================================

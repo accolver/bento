@@ -83,6 +83,46 @@ void main() {
       expect(result.providerCount, 3);
     });
 
+    // @telos-scenario L1:...:remote_ai_detection:claude-code-detected
+    test('hasAnyProvider is true when claudeCodeDetected is true', () {
+      final result = RemoteAiDetectionResult(
+        hostId: 'test-host',
+        claudeCodeDetected: true,
+        claudeCodeVersion: '2.1.0',
+        checkedAt: DateTime.now(),
+      );
+      expect(result.hasAnyProvider, isTrue);
+      expect(result.claudeCodeDetected, isTrue);
+      expect(result.claudeCodeVersion, '2.1.0');
+    });
+
+    // @telos-scenario L1:...:remote_ai_detection:claude-code-defaults
+    test('claudeCode fields default to false/null', () {
+      final result = RemoteAiDetectionResult(
+        hostId: 'test-host',
+        checkedAt: DateTime.now(),
+      );
+      expect(result.claudeCodeDetected, isFalse);
+      expect(result.claudeCodeVersion, isNull);
+    });
+
+    // @telos-scenario L1:...:remote_ai_detection:provider-count-includes-claude-code
+    test('providerCount includes Claude Code', () {
+      final result = RemoteAiDetectionResult(
+        hostId: 'test-host',
+        claudeCodeDetected: true,
+        checkedAt: DateTime.now(),
+      );
+      expect(result.providerCount, 1);
+    });
+
+    // @telos-scenario L1:...:remote_ai_detection:empty-no-claude-code
+    test('empty result has no Claude Code', () {
+      final result = RemoteAiDetectionResult.empty('test-host');
+      expect(result.claudeCodeDetected, isFalse);
+      expect(result.claudeCodeVersion, isNull);
+    });
+
     // @telos-scenario L1:...:remote_ai_detection:staleness
     test('isStale returns true after 5 minutes', () {
       final result = RemoteAiDetectionResult(

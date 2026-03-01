@@ -55,6 +55,8 @@ class RemoteAiDetectionResult {
     required this.hostId,
     this.ollamaModels = const [],
     this.cloudProviders = const [],
+    this.claudeCodeDetected = false,
+    this.claudeCodeVersion,
     required this.checkedAt,
     this.detectionMethod = RemoteDetectionMethod.direct,
   });
@@ -68,15 +70,23 @@ class RemoteAiDetectionResult {
   /// Cloud providers detected via environment variables.
   final List<DetectedCloudProvider> cloudProviders;
 
+  /// Whether Claude Code CLI was detected on the remote host.
+  final bool claudeCodeDetected;
+
+  /// Version string of Claude Code if detected (e.g., "2.1.0").
+  final String? claudeCodeVersion;
+
   /// When this detection was performed.
   final DateTime checkedAt;
 
   /// How the env vars were detected (direct shell or login shell fallback).
   final RemoteDetectionMethod detectionMethod;
 
-  /// Whether any AI provider was detected (Ollama or cloud).
+  /// Whether any AI provider was detected (Ollama, cloud, or Claude Code).
   bool get hasAnyProvider =>
-      ollamaModels.isNotEmpty || cloudProviders.isNotEmpty;
+      ollamaModels.isNotEmpty ||
+      cloudProviders.isNotEmpty ||
+      claudeCodeDetected;
 
   /// Whether Ollama was detected with at least one model.
   bool get hasOllama => ollamaModels.isNotEmpty;
@@ -84,8 +94,11 @@ class RemoteAiDetectionResult {
   /// Whether any cloud providers were detected.
   bool get hasCloudProviders => cloudProviders.isNotEmpty;
 
-  /// Total number of detected providers (Ollama counts as 1 if present).
-  int get providerCount => (hasOllama ? 1 : 0) + cloudProviders.length;
+  /// Total number of detected providers (Ollama and Claude Code count as 1 each if present).
+  int get providerCount =>
+      (hasOllama ? 1 : 0) +
+      cloudProviders.length +
+      (claudeCodeDetected ? 1 : 0);
 
   /// The best recommended provider based on quality ranking.
   ///
@@ -109,7 +122,8 @@ class RemoteAiDetectionResult {
   @override
   String toString() => 'RemoteAiDetectionResult(hostId: $hostId, '
       'ollama: ${ollamaModels.length} models, '
-      'cloud: ${cloudProviders.length} providers)';
+      'cloud: ${cloudProviders.length} providers, '
+      'claudeCode: $claudeCodeDetected${claudeCodeVersion != null ? ' v$claudeCodeVersion' : ''})';
 }
 
 /// How environment variables were detected on the remote host.

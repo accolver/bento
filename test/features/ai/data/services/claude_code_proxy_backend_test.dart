@@ -175,9 +175,11 @@ void main() {
         await backend.generateCommand(client, 'list files');
 
         expect(capturedCommand, isNotNull);
-        // Should contain the python3 subshell for token extraction
-        expect(capturedCommand, contains(r'$(python3'));
-        expect(capturedCommand, contains('.claude/.credentials'));
+        // Should contain the claude CLI subshell for token extraction
+        expect(
+          capturedCommand,
+          contains(r'$(claude --print-access-token'),
+        );
       });
 
       // @telos-scenario L1:function:lib/features/ai/data/services:claude_code_proxy_backend:curl-uses-anthropic-endpoint
@@ -330,11 +332,11 @@ void main() {
           exitCode: 1,
         );
 
-        var callCount = 0;
         when(() => client.execute(any())).thenAnswer((invocation) {
-          callCount++;
           final cmd = invocation.positionalArguments[0] as String;
-          if (cmd.contains('--print-access-token')) {
+          // Distinguish standalone refresh command from curl command
+          // (curl embeds --print-access-token in the Authorization header)
+          if (cmd.startsWith('claude --print-access-token')) {
             return Future.value(refreshSession);
           }
           return Future.value(errorSession);
@@ -370,7 +372,8 @@ void main() {
 
         when(() => client.execute(any())).thenAnswer((invocation) {
           final cmd = invocation.positionalArguments[0] as String;
-          if (cmd.contains('--print-access-token')) {
+          // Distinguish standalone refresh command from curl command
+          if (cmd.startsWith('claude --print-access-token')) {
             return Future.value(refreshSession);
           }
           return Future.value(errorSession);
@@ -412,7 +415,8 @@ void main() {
         var curlCallCount = 0;
         when(() => client.execute(any())).thenAnswer((invocation) {
           final cmd = invocation.positionalArguments[0] as String;
-          if (cmd.contains('--print-access-token')) {
+          // Distinguish standalone refresh command from curl command
+          if (cmd.startsWith('claude --print-access-token')) {
             return Future.value(refreshSession);
           }
           curlCallCount++;
@@ -697,22 +701,21 @@ void main() {
     // =========================================================================
     group('token extraction', () {
       // @telos-scenario L1:function:lib/features/ai/data/services:claude_code_proxy_backend:token-extraction-constant
-      test('tokenExtraction contains python3 and grep fallback', () {
+      test('tokenExtraction uses claude CLI for cross-platform token access',
+          () {
         expect(
           ClaudeCodeProxyBackend.tokenExtraction,
-          contains('python3'),
+          contains('claude --print-access-token'),
         );
+        // Should be a subshell so the token is resolved by the remote shell
         expect(
           ClaudeCodeProxyBackend.tokenExtraction,
-          contains('claudeApiKey'),
+          startsWith(r'$('),
         );
+        // Should suppress stderr
         expect(
           ClaudeCodeProxyBackend.tokenExtraction,
-          contains('oauthToken'),
-        );
-        expect(
-          ClaudeCodeProxyBackend.tokenExtraction,
-          contains('grep'),
+          contains('2>/dev/null'),
         );
       });
     });

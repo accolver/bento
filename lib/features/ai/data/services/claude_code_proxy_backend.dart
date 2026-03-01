@@ -16,36 +16,35 @@ import 'remote_ai_exceptions.dart';
 import 'remote_backend.dart';
 
 /// Remote backend that proxies Anthropic API calls through SSH using
-/// Claude Code's OAuth credentials stored in `~/.claude/.credentials`.
+/// Claude Code's OAuth credentials.
 ///
 /// ## Security Model (Key-Opaque Architecture)
 ///
 /// Like [CloudProxyBackend], Bento never reads, stores, or transmits
 /// credential values. Instead:
-/// 1. Token extraction uses a shell subshell `$(...)` that runs on the
-///    remote host — the token value is resolved at execution time
+/// 1. Token extraction uses `$(claude --print-access-token)` which runs
+///    on the remote host — the token value is resolved at execution time
 /// 2. Bento only sees the AI response, never the authentication token
-/// 3. On 401 errors, token refresh is attempted via `claude --print-access-token`
-///    on the remote host
+/// 3. On 401 errors, a retry is attempted (the CLI handles refresh)
 ///
 /// ## How Token Extraction Works
 ///
-/// The `~/.claude/.credentials` file is a JSON file containing either:
-/// - `claudeApiKey`: A long-lived API key
-/// - `oauthToken`: An OAuth access token (from `claude login`)
+/// Claude Code stores credentials differently per platform:
+/// - **macOS**: encrypted macOS Keychain (not accessible via file)
+/// - **Linux**: `~/.claude/.credentials` file
 ///
-/// The token is extracted via a shell subshell that:
-/// 1. Tries `python3` to parse JSON and extract the key (preferred)
-/// 2. Falls back to `grep` + `cut` for systems without Python
+/// Using `claude --print-access-token` abstracts this away — it works
+/// on both platforms, handles token refresh internally, and returns
+/// a valid Bearer token regardless of storage backend.
 ///
 /// ## Differences from CloudProxyBackend
 ///
 /// | Aspect              | CloudProxyBackend          | ClaudeCodeProxyBackend       |
 /// |---------------------|----------------------------|------------------------------|
-/// | Auth source         | Environment variable       | `~/.claude/.credentials`     |
+/// | Auth source         | Environment variable       | `claude --print-access-token`|
 /// | Auth header         | `x-api-key: $ENV_VAR`      | `Authorization: Bearer $(…)` |
-/// | Token refresh       | N/A (static env var)       | `claude --print-access-token`|
-/// | 401 handling        | Throw immediately          | Retry after token refresh    |
+/// | Token refresh       | N/A (static env var)       | Handled by Claude Code CLI   |
+/// | 401 handling        | Throw immediately          | Retry once                   |
 class ClaudeCodeProxyBackend extends RemoteBackend {
   /// Creates a Claude Code proxy backend.
   ///
@@ -67,17 +66,16 @@ class ClaudeCodeProxyBackend extends RemoteBackend {
   /// Temperature for generation.
   final double temperature;
 
-  /// Shell subshell command that extracts the Bearer token from
-  /// `~/.claude/.credentials` on the remote host.
+  /// Shell subshell command that extracts the Bearer token using
+  /// Claude Code's CLI.
   ///
-  /// Strategy:
-  /// 1. Try python3 JSON parsing (reliable, handles edge cases)
-  /// 2. Fall back to grep+cut (works without Python)
+  /// `claude --print-access-token` works on both macOS (Keychain) and
+  /// Linux (~/.claude/.credentials), handles token refresh internally,
+  /// and returns a valid Bearer token.
   ///
   /// The subshell is embedded in the curl command's Authorization header
   /// so the token value is resolved by the remote shell, never by Bento.
-  static const tokenExtraction =
-      r'''$(python3 -c "import json; print(json.load(open('$HOME/.claude/.credentials')).get('claudeApiKey', json.load(open('$HOME/.claude/.credentials')).get('oauthToken', '')))" 2>/dev/null || grep -o '"claudeApiKey":"[^"]*"\|"oauthToken":"[^"]*"' ~/.claude/.credentials | head -1 | cut -d'"' -f4)''';
+  static const tokenExtraction = r'$(claude --print-access-token 2>/dev/null)';
 
   @override
   bool get isConfigured => true;

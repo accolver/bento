@@ -22,24 +22,32 @@ class ClaudeCodeDetectionResult {
 
 /// Detects whether Claude Code is installed on a remote SSH host.
 ///
-/// Checks for `~/.claude/.credentials` file existence, indicating
-/// Claude Code is installed and authenticated. This is distinct from
-/// `ANTHROPIC_API_KEY` — a user may have a Claude Max subscription
-/// via Claude Code but no raw API key.
+/// Checks for the `claude` CLI binary via `command -v claude`. This works
+/// on both macOS (where credentials are in the Keychain) and Linux (where
+/// credentials may be in `~/.claude/.credentials`).
+///
+/// This is distinct from checking `ANTHROPIC_API_KEY` — a user may have
+/// a Claude Max subscription via Claude Code but no raw API key set.
 ///
 /// Like [EnvProviderDetector], this never reads credential values.
-/// Detection only checks file existence via `test -f`.
+/// Detection only checks CLI existence, and optionally probes whether
+/// the session is authenticated via `claude --print-access-token`.
 class ClaudeCodeDetector {
   const ClaudeCodeDetector();
 
   static const _sentinel = 'CLAUDE_CODE_FOUND';
 
   /// Detect Claude Code on the remote host.
+  ///
+  /// Detection strategy:
+  /// 1. Check if `claude` CLI is in PATH (`command -v claude`)
+  /// 2. Verify it has a valid session (`claude --print-access-token`)
+  /// 3. Get version string (`claude --version`)
   Future<ClaudeCodeDetectionResult> detect(SSHClient client) async {
     try {
+      // Check if claude CLI exists in PATH
       const detectionCmd =
-          'test -d ~/.claude && test -f ~/.claude/.credentials '
-          '&& echo "$_sentinel"';
+          'command -v claude >/dev/null 2>&1 && echo "$_sentinel"';
 
       final session = await client
           .execute(detectionCmd)
@@ -49,11 +57,20 @@ class ClaudeCodeDetector {
       final exitCode = await session.exitCode;
 
       if (exitCode != 0 || !stdout.contains(_sentinel)) {
-        debugPrint('[ClaudeCodeDetector] Not found (exit=$exitCode)');
+        debugPrint('[ClaudeCodeDetector] CLI not found (exit=$exitCode)');
         return ClaudeCodeDetectionResult.notDetected;
       }
 
-      debugPrint('[ClaudeCodeDetector] Found Claude Code');
+      debugPrint('[ClaudeCodeDetector] CLI found, checking auth...');
+
+      // Verify the session is authenticated by trying to get an access token
+      final hasAuth = await _hasValidAuth(client);
+      if (!hasAuth) {
+        debugPrint('[ClaudeCodeDetector] CLI found but not authenticated');
+        return ClaudeCodeDetectionResult.notDetected;
+      }
+
+      debugPrint('[ClaudeCodeDetector] Found authenticated Claude Code');
       final version = await _getVersion(client);
 
       return ClaudeCodeDetectionResult(
@@ -66,6 +83,25 @@ class ClaudeCodeDetector {
     } catch (e) {
       debugPrint('[ClaudeCodeDetector] Detection error: $e');
       return ClaudeCodeDetectionResult.notDetected;
+    }
+  }
+
+  /// Check if Claude Code has a valid authenticated session.
+  ///
+  /// Runs `claude --print-access-token` which returns a token if
+  /// the user is logged in. We don't read the token value — just
+  /// check that the command succeeds (exit 0) and produces output.
+  Future<bool> _hasValidAuth(SSHClient client) async {
+    try {
+      final session = await client
+          .execute('claude --print-access-token 2>/dev/null | '
+              'grep -c . >/dev/null 2>&1 && echo "AUTH_OK"')
+          .timeout(const Duration(seconds: 10));
+
+      final stdout = await SshUtils.collectOutput(session.stdout);
+      return stdout.contains('AUTH_OK');
+    } catch (_) {
+      return false;
     }
   }
 

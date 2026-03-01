@@ -6,30 +6,35 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/remote_ai_detection.dart';
+import 'claude_code_detector.dart';
 import 'env_provider_detector.dart';
 import 'ollama_detector.dart';
 
 /// Unified AI detection orchestrator for SSH-connected hosts.
 ///
-/// Combines [OllamaDetector] and [EnvProviderDetector] to discover
-/// all available AI capabilities on a remote host in a single detection
-/// pass after SSH connection establishment.
+/// Combines [OllamaDetector], [EnvProviderDetector], and
+/// [ClaudeCodeDetector] to discover all available AI capabilities
+/// on a remote host in a single detection pass after SSH connection
+/// establishment.
 ///
 /// Results are cached per host with a 5-minute expiry.
 class RemoteAiDetector {
   /// Creates a detector with optional custom sub-detectors.
   ///
-  /// Falls back to default [OllamaDetector] and [EnvProviderDetector]
-  /// implementations when none are provided.
+  /// Falls back to default [OllamaDetector], [EnvProviderDetector],
+  /// and [ClaudeCodeDetector] implementations when none are provided.
   RemoteAiDetector({
     OllamaDetector? ollamaDetector,
     EnvProviderDetector? envProviderDetector,
+    ClaudeCodeDetector? claudeCodeDetector,
   })  : _ollamaDetector = ollamaDetector ?? const OllamaDetector(),
         _envProviderDetector =
-            envProviderDetector ?? const EnvProviderDetector();
+            envProviderDetector ?? const EnvProviderDetector(),
+        _claudeCodeDetector = claudeCodeDetector ?? const ClaudeCodeDetector();
 
   final OllamaDetector _ollamaDetector;
   final EnvProviderDetector _envProviderDetector;
+  final ClaudeCodeDetector _claudeCodeDetector;
 
   /// Cache of detection results by host ID.
   final Map<String, RemoteAiDetectionResult> _cache = {};
@@ -43,8 +48,8 @@ class RemoteAiDetector {
 
   /// Run full detection on the given SSH client.
   ///
-  /// Probes for both Ollama and cloud provider env vars in parallel.
-  /// Caches the result and emits a detection event.
+  /// Probes for Ollama, cloud provider env vars, and Claude Code
+  /// in parallel. Caches the result and emits a detection event.
   ///
   /// [hostId] - Identifier for the SSH host (used for caching).
   /// [client] - Active SSH client connection.
@@ -54,17 +59,21 @@ class RemoteAiDetector {
   }) async {
     debugPrint('[RemoteAiDetector] Starting detection for $hostId');
 
-    // Run both detections in parallel
+    // Run all three detections in parallel
     final ollamaFuture = _ollamaDetector.detect(client);
     final envFuture = _envProviderDetector.detect(client);
+    final claudeCodeFuture = _claudeCodeDetector.detect(client);
 
     final ollamaModels = await ollamaFuture;
     final envResult = await envFuture;
+    final claudeCodeResult = await claudeCodeFuture;
 
     final detectionResult = RemoteAiDetectionResult(
       hostId: hostId,
       ollamaModels: ollamaModels ?? [],
       cloudProviders: envResult.providers,
+      claudeCodeDetected: claudeCodeResult.detected,
+      claudeCodeVersion: claudeCodeResult.version,
       checkedAt: DateTime.now(),
       detectionMethod: envResult.method,
     );
@@ -76,16 +85,20 @@ class RemoteAiDetector {
     if (detectionResult.hasAnyProvider) {
       debugPrint('[RemoteAiDetector] Detected ${detectionResult.providerCount} '
           'providers on $hostId');
-      _emitEvent(RemoteAiDetectedEvent(
-        hostId: hostId,
-        result: detectionResult,
-      ));
+      _emitEvent(
+        RemoteAiDetectedEvent(
+          hostId: hostId,
+          result: detectionResult,
+        ),
+      );
     } else {
       debugPrint('[RemoteAiDetector] No AI providers found on $hostId');
-      _emitEvent(RemoteAiNotFoundEvent(
-        hostId: hostId,
-        reason: 'No Ollama or cloud provider env vars detected',
-      ));
+      _emitEvent(
+        RemoteAiNotFoundEvent(
+          hostId: hostId,
+          reason: 'No Ollama, cloud provider env vars, or Claude Code detected',
+        ),
+      );
     }
 
     return detectionResult;

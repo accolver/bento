@@ -1,5 +1,6 @@
 // @telos-test L1:function:lib/features/ai/data/services:remote_ai_detector
 
+import 'package:bento/features/ai/data/services/claude_code_detector.dart';
 import 'package:bento/features/ai/data/services/env_provider_detector.dart';
 import 'package:bento/features/ai/data/services/ollama_detector.dart';
 import 'package:bento/features/ai/data/services/remote_ai_detector.dart';
@@ -14,11 +15,14 @@ class MockOllamaDetector extends Mock implements OllamaDetector {}
 
 class MockEnvProviderDetector extends Mock implements EnvProviderDetector {}
 
+class MockClaudeCodeDetector extends Mock implements ClaudeCodeDetector {}
+
 class MockSSHClient extends Mock implements SSHClient {}
 
 void main() {
   late MockOllamaDetector mockOllamaDetector;
   late MockEnvProviderDetector mockEnvDetector;
+  late MockClaudeCodeDetector mockClaudeCodeDetector;
   late MockSSHClient mockClient;
   late RemoteAiDetector detector;
 
@@ -56,10 +60,17 @@ void main() {
   setUp(() {
     mockOllamaDetector = MockOllamaDetector();
     mockEnvDetector = MockEnvProviderDetector();
+    mockClaudeCodeDetector = MockClaudeCodeDetector();
     mockClient = MockSSHClient();
+
+    // Default stub: Claude Code not detected (prevents unstubbed mock errors)
+    when(() => mockClaudeCodeDetector.detect(any()))
+        .thenAnswer((_) async => ClaudeCodeDetectionResult.notDetected);
+
     detector = RemoteAiDetector(
       ollamaDetector: mockOllamaDetector,
       envProviderDetector: mockEnvDetector,
+      claudeCodeDetector: mockClaudeCodeDetector,
     );
   });
 
@@ -195,6 +206,82 @@ void main() {
       });
     });
 
+    group('Claude Code detection', () {
+      // @telos-scenario L1:...:remote_ai_detector:includes-claude-code
+      test('includes Claude Code in result when detected', () async {
+        stubDetectors(
+          ollamaModels: [ollamaModel],
+          cloudProviders: [cloudProvider],
+        );
+        when(() => mockClaudeCodeDetector.detect(any())).thenAnswer(
+          (_) async => const ClaudeCodeDetectionResult(
+            detected: true,
+            version: '2.1.0',
+          ),
+        );
+
+        final result = await detector.detect(
+          hostId: 'host-1',
+          client: mockClient,
+        );
+
+        expect(result.claudeCodeDetected, isTrue);
+        expect(result.claudeCodeVersion, '2.1.0');
+        expect(result.hasAnyProvider, isTrue);
+        // 1 Ollama + 1 cloud + 1 Claude Code
+        expect(result.providerCount, 3);
+
+        verify(() => mockClaudeCodeDetector.detect(mockClient)).called(1);
+      });
+
+      // @telos-scenario L1:...:remote_ai_detector:claude-code-only-emits-detected
+      test('emits detected event when only Claude Code found', () async {
+        stubDetectors(
+          ollamaModels: null,
+          cloudProviders: [],
+        );
+        when(() => mockClaudeCodeDetector.detect(any())).thenAnswer(
+          (_) async => const ClaudeCodeDetectionResult(
+            detected: true,
+            version: '2.0.0',
+          ),
+        );
+
+        final eventFuture = detector.detectionEvents.first;
+
+        final result = await detector.detect(
+          hostId: 'host-1',
+          client: mockClient,
+        );
+
+        expect(result.hasAnyProvider, isTrue);
+        expect(result.claudeCodeDetected, isTrue);
+        expect(result.hasOllama, isFalse);
+        expect(result.hasCloudProviders, isFalse);
+        expect(result.providerCount, 1);
+
+        final event = await eventFuture;
+        expect(event, isA<RemoteAiDetectedEvent>());
+      });
+
+      // @telos-scenario L1:...:remote_ai_detector:claude-code-not-detected
+      test('Claude Code not detected returns false in result', () async {
+        stubDetectors(
+          ollamaModels: null,
+          cloudProviders: [],
+        );
+        // Uses default stub: ClaudeCodeDetectionResult.notDetected
+
+        final result = await detector.detect(
+          hostId: 'host-1',
+          client: mockClient,
+        );
+
+        expect(result.claudeCodeDetected, isFalse);
+        expect(result.claudeCodeVersion, isNull);
+      });
+    });
+
     group('detectionEvents', () {
       // @telos-scenario L1:...:remote_ai_detector:emits-detected-event
       test('emits RemoteAiDetectedEvent when providers found', () async {
@@ -236,6 +323,7 @@ void main() {
         final notFound = event as RemoteAiNotFoundEvent;
         expect(notFound.reason, isNotNull);
         expect(notFound.reason, contains('No Ollama'));
+        expect(notFound.reason, contains('Claude Code'));
       });
 
       // @telos-scenario L1:...:remote_ai_detector:emits-detected-ollama-only

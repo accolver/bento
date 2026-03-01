@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('RemoteProviderRegistry', () {
     // @telos-scenario L1:...:remote_ai_provider:all-providers-present
-    test('contains all 11 providers', () {
-      expect(RemoteProviderRegistry.providers.length, 11);
+    test('contains all 12 providers', () {
+      expect(RemoteProviderRegistry.providers.length, 12);
     });
 
     // @telos-scenario L1:...:remote_ai_provider:env-vars-unique

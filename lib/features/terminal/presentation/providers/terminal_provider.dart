@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -62,14 +63,14 @@ class TerminalController extends _$TerminalController {
   void _handleTerminalOutput(String data) {
     if (_sshDataSource?.isConnected ?? false) {
       // Debug: Log raw input data for troubleshooting keyboard issues
-      if (data.isNotEmpty) {
+      if (kDebugMode && data.isNotEmpty) {
         final codeUnits = data.codeUnits;
         debugPrint(
           'Terminal input: "${_escapeForLog(data)}" '
           'codeUnits: $codeUnits '
           'length: ${data.length}',
         );
-      } else {
+      } else if (kDebugMode) {
         debugPrint('Terminal input: EMPTY STRING');
       }
 
@@ -165,32 +166,62 @@ class TerminalController extends _$TerminalController {
   // @telos L1:function:lib/features/terminal/presentation/providers:terminal_provider:_triggerRemoteAiDetection
   void _triggerRemoteAiDetection(SSHConnectionConfig config) {
     _detectionTimer?.cancel();
+    _detectionTimer = null;
     final hostId = '${config.host}:${config.port}';
 
     _detectionTimer = Timer(const Duration(seconds: 1), () {
+      // Clear timer reference immediately to avoid holding it
       _detectionTimer = null;
 
-      final client = _sshDataSource?.client;
-      if (client == null) {
-        debugPrint(
-          '[TerminalController] SSH client gone before detection for $hostId',
-        );
+      // Check if we still have a valid SSH connection and client
+      final dataSource = _sshDataSource;
+      if (dataSource == null || !dataSource.isConnected) {
+        if (kDebugMode) {
+          debugPrint(
+            '[TerminalController] SSH disconnected before detection for $hostId',
+          );
+        }
         return;
       }
 
-      debugPrint(
-        '[TerminalController] Triggering AI detection for $hostId',
-      );
+      final client = dataSource.client;
+      if (client == null) {
+        if (kDebugMode) {
+          debugPrint(
+            '[TerminalController] SSH client null before detection for $hostId',
+          );
+        }
+        return;
+      }
 
+      if (kDebugMode) {
+        debugPrint(
+          '[TerminalController] Triggering AI detection for $hostId',
+        );
+      }
+
+      // Use a weak reference pattern by re-checking connection state 
       ref
           .read(remoteAiDetectionStateProvider(hostId).notifier)
           .detect(client)
           .then((result) {
+        // Double-check that we're still connected before proceeding
+        if (_sshDataSource?.isConnected != true) {
+          if (kDebugMode) {
+            debugPrint(
+              '[TerminalController] SSH disconnected during detection for $hostId',
+            );
+          }
+          return;
+        }
+
         if (result.hasAnyProvider) {
-          debugPrint(
-            '[TerminalController] AI detected on $hostId: '
-            '${result.providerCount} providers',
-          );
+          if (kDebugMode) {
+            debugPrint(
+              '[TerminalController] AI detected on $hostId: '
+              '${result.providerCount} providers',
+            );
+          }
 
           // Auto-initialize the remote AI service controller
           final savedConfig = ref.read(remoteAiConfigStateProvider(hostId));
@@ -207,25 +238,38 @@ class TerminalController extends _$TerminalController {
           ref.invalidate(activeRemoteAiServiceProvider);
           ref.invalidate(aiServiceControllerProvider);
 
-          debugPrint(
-            '[TerminalController] Invalidated aiServiceControllerProvider '
-            'after remote service init for $hostId',
-          );
+          if (kDebugMode) {
+            debugPrint(
+              '[TerminalController] Invalidated aiServiceControllerProvider '
+              'after remote service init for $hostId',
+            );
+          }
         }
       }).catchError((Object e) {
-        debugPrint('[TerminalController] AI detection failed for $hostId: $e');
+        if (kDebugMode) {
+          debugPrint('[TerminalController] AI detection failed for $hostId: $e');
+        }
       });
     });
   }
 
   /// Disconnects from the current SSH session.
   Future<void> disconnectSSH() async {
+    // Cancel and clear detection timer first to prevent timer callbacks 
+    // from accessing the SSH client after disconnect
     _detectionTimer?.cancel();
     _detectionTimer = null;
+    
+    // Cancel output subscription to stop listening to SSH data
     await _outputSubscription?.cancel();
     _outputSubscription = null;
+    
+    // Close and nullify SSH data source
     await _sshDataSource?.close();
     _sshDataSource = null;
+    
+    // Clear terminal output handler to prevent further SSH writes
+    state.onOutput = null;
   }
 
   /// Returns true if connected to an SSH session.

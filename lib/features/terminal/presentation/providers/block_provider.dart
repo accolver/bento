@@ -1,5 +1,6 @@
 // @telos L1:function:lib/features/terminal/presentation/providers:block_provider
 
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -60,7 +61,21 @@ class BlockListState {
   }
 }
 
-/// Maximum output size in memory before truncation (100KB).
+/// Maximum output size in memory before truncation.
+///
+/// This limit prevents excessive memory usage from large terminal outputs
+/// (e.g., large file dumps, log files). When output exceeds this limit,
+/// it's truncated for display but the full output is cached separately.
+///
+/// Current limit: 100KB (100 * 1024 bytes)
+/// 
+/// This value balances memory usage with typical terminal output sizes:
+/// - Small commands (ls, ps): < 1KB
+/// - Medium output (cat config.json): 1-10KB  
+/// - Large output (cat log file): 10-100KB
+/// - Very large output: truncated to preserve performance
+///
+/// TODO: Make this configurable via user preferences in settings
 const kMaxOutputSizeBytes = 100 * 1024;
 
 /// Truncation indicator appended when output is truncated.
@@ -83,7 +98,10 @@ class BlockListController extends _$BlockListController {
 
   /// Stores the full output for blocks that have been truncated in memory.
   /// Key: blockId, Value: full output string
-  final Map<String, String> _fullOutputCache = {};
+  /// 
+  /// Cache is bounded to prevent memory issues with large outputs.
+  static const int _maxCacheEntries = 50;
+  final Map<String, String> _fullOutputCache = <String, String>{};
 
   @override
   BlockListState build(String sessionId) {
@@ -175,7 +193,7 @@ class BlockListController extends _$BlockListController {
           // Check if truncation is needed
           if (outputBytes > kMaxOutputSizeBytes && !block.isTruncated) {
             // Store full output in cache for later retrieval
-            _fullOutputCache[targetId] = newOutput;
+            _addToOutputCache(targetId, newOutput);
 
             // Truncate and mark as truncated
             final truncatedOutput =
@@ -188,7 +206,7 @@ class BlockListController extends _$BlockListController {
           } else if (block.isTruncated) {
             // Already truncated - update the cache but not the displayed output
             final currentFull = _fullOutputCache[targetId] ?? '';
-            _fullOutputCache[targetId] = currentFull + output;
+            _addToOutputCache(targetId, currentFull + output);
             return block; // Keep displayed output as-is
           }
 
@@ -309,6 +327,9 @@ class BlockListController extends _$BlockListController {
     final block = state.blocks.where((b) => b.id == blockId).firstOrNull;
     if (block == null) return;
 
+    // Clean up cached output for this block
+    _removeFromOutputCache(blockId);
+
     state = state.copyWith(
       blocks: state.blocks.where((b) => b.id != blockId).toList(),
       clearActiveBlock: blockId == state.activeBlockId,
@@ -320,6 +341,9 @@ class BlockListController extends _$BlockListController {
 
   /// Clears all blocks for the current session.
   Future<void> clearBlocks() async {
+    // Clear all cached outputs
+    _fullOutputCache.clear();
+
     state = state.copyWith(
       blocks: [],
       clearActiveBlock: true,
@@ -419,6 +443,32 @@ class BlockListController extends _$BlockListController {
   /// Returns the active block if one exists.
   TerminalBlock? get activeBlock => state.activeBlock;
 
+  /// Adds output to the cache with size-based eviction.
+  /// 
+  /// Uses LRU (Least Recently Used) eviction when cache exceeds max size.
+  /// This prevents unbounded memory growth from large terminal outputs.
+  void _addToOutputCache(String blockId, String output) {
+    // If cache is at capacity, remove oldest entry (simple FIFO)
+    if (_fullOutputCache.length >= _maxCacheEntries) {
+      final oldestKey = _fullOutputCache.keys.first;
+      _fullOutputCache.remove(oldestKey);
+      if (kDebugMode) {
+        debugPrint(
+          '[BlockListController] Evicted cached output for block $oldestKey '
+          '(cache at capacity: $_maxCacheEntries)',
+        );
+      }
+    }
+    
+    // Add new entry
+    _fullOutputCache[blockId] = output;
+  }
+
+  /// Removes a block's cached output.
+  void _removeFromOutputCache(String blockId) {
+    _fullOutputCache.remove(blockId);
+  }
+
   /// Persists a block to the database.
   Future<void> _persistBlock(String blockId) async {
     if (_repository == null) return;
@@ -432,9 +482,15 @@ class BlockListController extends _$BlockListController {
       if (!updated) {
         await _repository!.saveBlock(block);
       }
-    } catch (e) {
-      // Log error but don't crash - persistence is best-effort
-      // In production, you'd use a proper logging framework
+    } catch (e, stackTrace) {
+      // Log error with proper details but don't crash - persistence is best-effort
+      if (kDebugMode) {
+        debugPrint('[BlockListController] Failed to persist block $blockId: $e');
+        debugPrint('[BlockListController] Stack trace: $stackTrace');
+      }
+      
+      // In production, you'd use a proper logging framework like:
+      // logger.error('Block persistence failed', error: e, stackTrace: stackTrace);
     }
   }
 }

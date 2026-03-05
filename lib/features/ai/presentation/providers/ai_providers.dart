@@ -59,10 +59,14 @@ class AiConfigState extends _$AiConfigState {
   @override
   Future<AiConfig> build() async {
     // Load persisted config on startup
-    debugPrint('[AiConfigState] build() called, loading config...');
+    if (kDebugMode) {
+      debugPrint('[AiConfigState] build() called, loading config...');
+    }
     final config = await _repo.loadConfig();
-    debugPrint(
-        '[AiConfigState] Loaded config: mode=${config.mode}, path=${config.localModelPath}');
+    if (kDebugMode) {
+      debugPrint(
+          '[AiConfigState] Loaded config: mode=${config.mode}, path=${config.localModelPath}');
+    }
     return config;
   }
 
@@ -162,11 +166,10 @@ class AiServiceController extends _$AiServiceController {
     _currentService = null;
     _isRemoteService = false;
 
-    final factory = ref.watch(aiServiceFactoryProvider);
-    final configRepository = ref.watch(aiConfigRepositoryProvider);
-
     // IMPORTANT: Establish all ref.watch() subscriptions BEFORE any await.
     // In Riverpod, watches after an await may not properly trigger rebuilds.
+    final factory = ref.watch(aiServiceFactoryProvider);
+    final configRepository = ref.watch(aiConfigRepositoryProvider);
     final remoteService = ref.watch(activeRemoteAiServiceProvider);
 
     // Wait for config to fully load (don't use valueOrNull which returns null while loading)
@@ -178,10 +181,12 @@ class AiServiceController extends _$AiServiceController {
       if (remoteService != null) {
         _currentService = remoteService;
         _isRemoteService = true;
-        debugPrint(
-          '[AiServiceController] Using remote service: '
-          '${remoteService.serviceName}',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '[AiServiceController] Using remote service: '
+            '${remoteService.serviceName}',
+          );
+        }
         return remoteService;
       }
 
@@ -197,10 +202,12 @@ class AiServiceController extends _$AiServiceController {
       // the await, making the read stale. The ref.watch() on
       // activeRemoteAiServiceProvider (established before the await) is the
       // correct mechanism and is sufficient with keepAlive: true.
-      debugPrint(
-        '[AiServiceController] Remote mode but no service available yet '
-        '— will rebuild when activeRemoteAiServiceProvider changes',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          '[AiServiceController] Remote mode but no service available yet '
+          '— will rebuild when activeRemoteAiServiceProvider changes',
+        );
+      }
       final unconfigured = const UnconfiguredAiService();
       _currentService = unconfigured;
       return unconfigured;
@@ -406,6 +413,14 @@ class AiSuggestionController extends _$AiSuggestionController {
     // Get the current AI service
     final service = ref.read(aiServiceProvider);
 
+    // Check if service is available before proceeding
+    if (service is UnconfiguredAiService) {
+      // Service not configured, don't generate
+      state = const AsyncData(null);
+      _isGenerating = false;
+      return;
+    }
+
     // If already generating, stop the current generation first
     if (_isGenerating) {
       if (service is LocalAiService) {
@@ -423,6 +438,12 @@ class AiSuggestionController extends _$AiSuggestionController {
 
     try {
       _lastGeneratedInput = input;
+      
+      // Check service availability before generating
+      if (!(await service.isAvailable())) {
+        throw Exception('AI service is not available');
+      }
+      
       final suggestion = await service.generateCommand(input);
 
       // Only update if this is still the latest request and no new request pending

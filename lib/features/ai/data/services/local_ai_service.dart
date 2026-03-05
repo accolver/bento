@@ -65,7 +65,7 @@ class LocalAiService implements AiService {
   bool _isGenerating = false;
 
   /// Lock to prevent concurrent generation requests.
-  final _generationLock = Completer<void>()..complete();
+  Completer<void>? _generationLock;
 
   /// Whether we're on a supported platform (Android).
   bool get _isPlatformSupported => Platform.isAndroid;
@@ -114,7 +114,9 @@ class LocalAiService implements AiService {
   /// Loading can take several seconds depending on model size.
   Future<void> _ensureModelLoaded() async {
     if (_isModelLoaded) {
-      debugPrint('[LocalAiService] Model already loaded (flag check)');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Model already loaded (flag check)');
+      }
       return;
     }
     if (!_isPlatformSupported) return;
@@ -131,17 +133,23 @@ class LocalAiService implements AiService {
       );
 
       _isModelLoaded = true;
-      debugPrint('[LocalAiService] Model loaded successfully');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Model loaded successfully');
+      }
     } on StateError catch (e) {
       // Handle "Model already loaded" error from the library
       if (e.message.contains('already loaded')) {
-        debugPrint('[LocalAiService] Model was already loaded in native layer');
+        if (kDebugMode) {
+          debugPrint('[LocalAiService] Model was already loaded in native layer');
+        }
         _isModelLoaded = true;
         return;
       }
       rethrow;
     } catch (e) {
-      debugPrint('[LocalAiService] Model load failed: $e');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Model load failed: $e');
+      }
       rethrow;
     }
   }
@@ -165,15 +173,34 @@ class LocalAiService implements AiService {
     }
   }
 
+  /// Acquires the generation lock to prevent concurrent generation.
+  /// 
+  /// Call this before starting any generation. The lock will be released
+  /// automatically when generation completes.
+  Future<void> _acquireGenerationLock() async {
+    // Wait for any existing generation to complete
+    if (_generationLock != null && !_generationLock!.isCompleted) {
+      await _generationLock!.future;
+    }
+    // Create a new lock for this generation
+    _generationLock = Completer<void>();
+  }
+
+  /// Releases the generation lock.
+  void _releaseGenerationLock() {
+    if (_generationLock != null && !_generationLock!.isCompleted) {
+      _generationLock!.complete();
+    }
+  }
+
   /// Waits for any in-progress generation to complete.
   ///
   /// Call this before performing actions that might conflict with
   /// native LLM operations (like executing a command).
   Future<void> waitForCompletion() async {
-    // If generation is in progress, wait a bit for it to stabilize
-    if (_isGenerating) {
-      // Try to stop gracefully
-      await stopGeneration();
+    // Wait for the lock if generation is in progress
+    if (_generationLock != null && !_generationLock!.isCompleted) {
+      await _generationLock!.future;
     }
     // Additional delay to let native resources settle
     await Future.delayed(const Duration(milliseconds: 50));
@@ -197,8 +224,8 @@ class LocalAiService implements AiService {
       return _getFallbackSuggestion(prompt);
     }
 
-    // Stop any in-progress generation first
-    await stopGeneration();
+    // Acquire generation lock to prevent concurrent access
+    await _acquireGenerationLock();
 
     try {
       _isGenerating = true;
@@ -251,6 +278,7 @@ class LocalAiService implements AiService {
       return _getFallbackSuggestion(prompt);
     } finally {
       _isGenerating = false;
+      _releaseGenerationLock();
     }
   }
 
@@ -274,8 +302,8 @@ class LocalAiService implements AiService {
       return;
     }
 
-    // Stop any in-progress generation first
-    await stopGeneration();
+    // Acquire generation lock to prevent concurrent access
+    await _acquireGenerationLock();
 
     try {
       _isGenerating = true;
@@ -312,12 +340,18 @@ class LocalAiService implements AiService {
       );
     } finally {
       _isGenerating = false;
+      _releaseGenerationLock();
     }
   }
 
   @override
   Future<void> dispose() async {
     await stopGeneration();
+    
+    // Release any pending generation lock
+    _releaseGenerationLock();
+    
+    // Clean up native resources
     if (_controller != null) {
       await _controller!.dispose();
       _controller = null;
@@ -327,46 +361,66 @@ class LocalAiService implements AiService {
 
   @override
   Future<String> summarizeOutput(String command, String output) async {
-    debugPrint('[LocalAiService] summarizeOutput called');
-    debugPrint('[LocalAiService] Model path: $_modelPath');
+    if (kDebugMode) {
+      debugPrint('[LocalAiService] summarizeOutput called');
+      debugPrint('[LocalAiService] Model path: $_modelPath');
+    }
 
     // Verify model exists
     final file = File(_modelPath);
     if (!await file.exists()) {
-      debugPrint('[LocalAiService] Model file not found!');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Model file not found!');
+      }
       throw AiServiceException(
         'Model file not found: $_modelPath',
         code: 'model_not_found',
       );
     }
-    debugPrint('[LocalAiService] Model file exists');
+    if (kDebugMode) {
+      debugPrint('[LocalAiService] Model file exists');
+    }
 
     // On unsupported platforms, throw an error
     if (!_isPlatformSupported) {
-      debugPrint(
-          '[LocalAiService] Platform not supported: ${Platform.operatingSystem}');
+      if (kDebugMode) {
+        debugPrint(
+            '[LocalAiService] Platform not supported: ${Platform.operatingSystem}');
+      }
       throw AiServiceException(
         'Local AI not available on ${Platform.operatingSystem}',
         code: 'unsupported_platform',
       );
     }
-    debugPrint('[LocalAiService] Platform supported');
+    if (kDebugMode) {
+      debugPrint('[LocalAiService] Platform supported');
+    }
 
-    // Stop any in-progress generation first
-    await stopGeneration();
-    debugPrint('[LocalAiService] Stopped previous generation');
+    // Acquire generation lock to prevent concurrent access
+    await _acquireGenerationLock();
+    if (kDebugMode) {
+      debugPrint('[LocalAiService] Acquired generation lock');
+    }
 
     try {
       _isGenerating = true;
-      debugPrint('[LocalAiService] Loading model...');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Loading model...');
+      }
       await _ensureModelLoaded();
-      debugPrint(
-          '[LocalAiService] Model loaded, isModelLoaded=$_isModelLoaded');
+      if (kDebugMode) {
+        debugPrint(
+            '[LocalAiService] Model loaded, isModelLoaded=$_isModelLoaded');
+      }
 
       // Clear context before generation
-      debugPrint('[LocalAiService] Clearing context...');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Clearing context...');
+      }
       await _controller!.clearContext();
-      debugPrint('[LocalAiService] Context cleared');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Context cleared');
+      }
 
       // Truncate output if too long (keep first 500 chars for context)
       final truncatedOutput =
@@ -379,8 +433,10 @@ $truncatedOutput
 
 Briefly describe what this output shows (1-2 sentences):''';
 
-      debugPrint('[LocalAiService] Starting generation...');
-      debugPrint('[LocalAiService] Prompt length: ${prompt.length}');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Starting generation...');
+        debugPrint('[LocalAiService] Prompt length: ${prompt.length}');
+      }
 
       // Collect all tokens
       final buffer = StringBuffer();
@@ -400,14 +456,18 @@ Briefly describe what this output shows (1-2 sentences):''';
           buffer.write(token);
         },
         onDone: () {
-          debugPrint(
-              '[LocalAiService] Generation complete, tokens: ${buffer.length}');
+          if (kDebugMode) {
+            debugPrint(
+                '[LocalAiService] Generation complete, tokens: ${buffer.length}');
+          }
           if (!completer.isCompleted) {
             completer.complete();
           }
         },
         onError: (Object error) {
-          debugPrint('[LocalAiService] Generation error: $error');
+          if (kDebugMode) {
+            debugPrint('[LocalAiService] Generation error: $error');
+          }
           if (!completer.isCompleted) {
             completer.completeError(error);
           }
@@ -418,7 +478,9 @@ Briefly describe what this output shows (1-2 sentences):''';
       await subscription.cancel();
 
       final response = buffer.toString().trim();
-      debugPrint('[LocalAiService] Raw response: $response');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Raw response: $response');
+      }
 
       // Clean up the response
       var summary = response
@@ -432,11 +494,15 @@ Briefly describe what this output shows (1-2 sentences):''';
         summary = '${sentences.take(2).join('. ')}.';
       }
 
-      debugPrint('[LocalAiService] Final summary: $summary');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Final summary: $summary');
+      }
       return summary.isEmpty ? 'No summary available.' : summary;
     } catch (e, stackTrace) {
-      debugPrint('[LocalAiService] Exception during summarization: $e');
-      debugPrint('[LocalAiService] Stack trace: $stackTrace');
+      if (kDebugMode) {
+        debugPrint('[LocalAiService] Exception during summarization: $e');
+        debugPrint('[LocalAiService] Stack trace: $stackTrace');
+      }
       // Re-throw so the UI can show the actual error
       throw AiServiceException(
         'Summarization failed: $e',
@@ -444,6 +510,7 @@ Briefly describe what this output shows (1-2 sentences):''';
       );
     } finally {
       _isGenerating = false;
+      _releaseGenerationLock();
     }
   }
 

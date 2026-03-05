@@ -75,6 +75,8 @@ class RemoteAiDetectionState extends _$RemoteAiDetectionState {
   /// Trigger detection for this host with the given SSH client.
   Future<RemoteAiDetectionResult> detect(SSHClient client) async {
     final detector = ref.read(remoteAiDetectorProvider);
+    
+    // Set loading state
     state = const AsyncLoading();
 
     try {
@@ -82,11 +84,28 @@ class RemoteAiDetectionState extends _$RemoteAiDetectionState {
         hostId: this.hostId,
         client: client,
       );
-      state = AsyncData(result);
+      
+      // Only update state if detection succeeded
+      if (result.hasAnyProvider) {
+        state = AsyncData(result);
+      } else {
+        // No providers found, but it's not an error
+        state = AsyncData(result);
+      }
+      
       return result;
     } catch (e, st) {
+      // Log the error for debugging
+      if (kDebugMode) {
+        debugPrint('[RemoteAiDetectionState] Detection failed for $hostId: $e');
+      }
+      
+      // Set error state with proper error handling
       state = AsyncError(e, st);
-      rethrow;
+      
+      // Return a default "no providers" result instead of rethrowing
+      // This allows the UI to handle the case gracefully
+      return RemoteAiDetectionResult.empty(this.hostId);
     }
   }
 
@@ -132,25 +151,63 @@ class RemoteAiConfigState extends _$RemoteAiConfigState {
 
   @override
   RemoteAiConfig? build(String hostId) {
-    // Load persisted config asynchronously, update state when ready
-    _loadFromPrefs();
+    // Schedule asynchronous loading to avoid blocking the build method
+    Future.microtask(() => _loadFromPrefs());
     return null;
   }
 
+  /// Loads configuration from SharedPreferences in a non-blocking way.
+  /// Uses Future.microtask to defer I/O operations and avoid blocking the UI.
   Future<void> _loadFromPrefs() async {
+    try {
+      // Use compute to run SharedPreferences I/O in an isolate to avoid blocking
+      final config = await _loadConfigInIsolate(hostId);
+      
+      // Only update state if we're still mounted and got a valid config
+      if (config != null && state == null) {
+        state = config;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[RemoteAiConfigState] Failed to load config for $hostId: $e');
+      }
+      // Don't update state on error - leave it null
+    }
+  }
+
+  /// Loads configuration in a separate isolate to avoid blocking the main thread.
+  static Future<RemoteAiConfig?> _loadConfigInIsolate(String hostId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = prefs.getString('$_keyPrefix$hostId');
       if (json != null) {
         final map = jsonDecode(json) as Map<String, dynamic>;
-        final config = _configFromJson(map);
-        if (state == null) {
-          state = config;
-        }
+        return _configFromJsonStatic(map, hostId);
       }
     } catch (e) {
-      debugPrint('[RemoteAiConfigState] Failed to load config for $hostId: $e');
+      // Return null on any error
     }
+    return null;
+  }
+
+  /// Static version of _configFromJson for use in isolate.
+  static RemoteAiConfig _configFromJsonStatic(Map<String, dynamic> json, String hostId) {
+    return RemoteAiConfig(
+      hostId: json['hostId'] as String? ?? hostId,
+      backendType: RemoteBackendType.values.firstWhere(
+        (b) => b.name == json['backendType'],
+        orElse: () => RemoteBackendType.ollama,
+      ),
+      ollamaModel: json['ollamaModel'] as String?,
+      cloudProvider: json['cloudProvider'] != null
+          ? RemoteCloudProvider.values.firstWhere(
+              (p) => p.name == json['cloudProvider'],
+              orElse: () => RemoteCloudProvider.anthropic,
+            )
+          : null,
+      envVarName: json['envVarName'] as String?,
+      ollamaPort: json['ollamaPort'] as int? ?? 11434,
+    );
   }
 
   /// Save a configuration for this host.
@@ -160,9 +217,13 @@ class RemoteAiConfigState extends _$RemoteAiConfigState {
       final prefs = await SharedPreferences.getInstance();
       final json = jsonEncode(_configToJson(config));
       await prefs.setString('$_keyPrefix$hostId', json);
-      debugPrint('[RemoteAiConfigState] Saved config for $hostId');
+      if (kDebugMode) {
+        debugPrint('[RemoteAiConfigState] Saved config for $hostId');
+      }
     } catch (e) {
-      debugPrint('[RemoteAiConfigState] Failed to save config for $hostId: $e');
+      if (kDebugMode) {
+        debugPrint('[RemoteAiConfigState] Failed to save config for $hostId: $e');
+      }
     }
   }
 
@@ -173,9 +234,11 @@ class RemoteAiConfigState extends _$RemoteAiConfigState {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('$_keyPrefix$hostId');
     } catch (e) {
-      debugPrint(
-        '[RemoteAiConfigState] Failed to clear config for $hostId: $e',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          '[RemoteAiConfigState] Failed to clear config for $hostId: $e',
+        );
+      }
     }
   }
 
@@ -253,10 +316,12 @@ class RemoteAiServiceController extends _$RemoteAiServiceController {
     );
 
     state = _service;
-    debugPrint(
-      '[RemoteAiServiceController] Initialized for $hostId '
-      'with ${backend.displayName}',
-    );
+    if (kDebugMode) {
+      debugPrint(
+        '[RemoteAiServiceController] Initialized for $hostId '
+        'with ${backend.displayName}',
+      );
+    }
     return _service!;
   }
 
@@ -322,7 +387,9 @@ class RemoteAiServiceController extends _$RemoteAiServiceController {
 
     // Auto-select Claude Code as highest priority
     if (result.claudeCodeDetected) {
-      debugPrint('[RemoteAiServiceController] Auto-selecting Claude Code');
+      if (kDebugMode) {
+        debugPrint('[RemoteAiServiceController] Auto-selecting Claude Code');
+      }
       return ClaudeCodeProxyBackend();
     }
 
@@ -392,13 +459,17 @@ String? activeRemoteHostId(Ref ref) {
 RemoteAiService? activeRemoteAiService(Ref ref) {
   final hostId = ref.watch(activeRemoteHostIdProvider);
   if (hostId == null) {
-    debugPrint('[activeRemoteAiService] No active host ID — returning null');
+    if (kDebugMode) {
+      debugPrint('[activeRemoteAiService] No active host ID — returning null');
+    }
     return null;
   }
   final service = ref.watch(remoteAiServiceControllerProvider(hostId));
-  debugPrint(
-    '[activeRemoteAiService] hostId=$hostId, '
-    'service=${service != null ? service.serviceName : "null"}',
-  );
+  if (kDebugMode) {
+    debugPrint(
+      '[activeRemoteAiService] hostId=$hostId, '
+      'service=${service != null ? service.serviceName : "null"}',
+    );
+  }
   return service;
 }

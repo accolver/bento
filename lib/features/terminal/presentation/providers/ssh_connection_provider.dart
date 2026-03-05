@@ -16,7 +16,10 @@ part 'ssh_connection_provider.g.dart';
 ///
 /// Provides methods to connect, disconnect, and monitor connection status.
 /// Exposes the underlying [SSHDataSource] for terminal I/O operations.
-@riverpod
+///
+/// Uses keepAlive: true to prevent auto-disposal during navigation,
+/// which would close the SSH connection unexpectedly.
+@Riverpod(keepAlive: true)
 class SSHConnectionNotifier extends _$SSHConnectionNotifier {
   SSHDataSource? _dataSource;
   StreamSubscription<SSHConnectionStatus>? _statusSubscription;

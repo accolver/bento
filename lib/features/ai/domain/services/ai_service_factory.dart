@@ -258,12 +258,5 @@ class AiServiceFactory {
     );
   }
 
-  /// Helper to retrieve API key from secure storage.
-  ///
-  /// Returns null if no key is stored.
-  Future<String?> _getApiKey(dynamic secureStorage) async {
-    // Will be implemented when FlutterSecureStorage is integrated
-    // For now, return null to trigger fallback
-    return null;
-  }
+  // Dead code removed - _getApiKey() method was unused
 }

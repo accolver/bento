@@ -80,38 +80,38 @@ class LocalAiModel with _$LocalAiModel {
 /// These are curated GGUF models from HuggingFace that work well
 /// with llama_flutter_android and are appropriate for mobile devices.
 ///
-/// We only offer SmolLM2-135M variants as they are the smallest models
-/// that can reliably load on memory-constrained mobile devices.
+/// We offer Qwen3.5-0.8B variants -- the smallest model in the Qwen 3.5
+/// Small Model Series. Built on improved architecture with scaled RL,
+/// these are designed for edge devices while providing meaningfully
+/// better intelligence than prior sub-1B models.
 ///
-/// Note: We use bartowski's public HuggingFace repo (official repo requires auth).
+/// Note: We use unsloth's public GGUF quantizations from HuggingFace.
 const List<LocalAiModel> availableLocalModels = [
-  // SmolLM2 135M Q4 - smallest possible, ~90 MB
-  // Aggressive quantization, fastest to download and load
+  // Qwen3.5 0.8B Q4_0 - compact quantization, ~507 MB
+  // Good balance of size and speed for mobile inference
   LocalAiModel(
-    id: 'smollm2-135m-q4',
-    name: 'SmolLM2 Tiny',
-    description: 'Smallest download (90 MB), fastest to load',
-    ollamaLibrary: 'smollm2',
-    ollamaTag: '135m-instruct-q4_0',
-    ollamaBlobDigest:
-        'hf:bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_0.gguf',
-    sizeBytes: 90000000, // ~90 MB
-    qualityRating: 2,
+    id: 'qwen3.5-0.8b-q4',
+    name: 'Qwen3.5 Tiny',
+    description: 'Compact download (507 MB), fast inference',
+    ollamaLibrary: 'qwen3.5',
+    ollamaTag: '0.8b-q4_0',
+    ollamaBlobDigest: 'hf:unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_0.gguf',
+    sizeBytes: 507000000, // ~507 MB
+    qualityRating: 3,
     isRecommended: true,
   ),
 
-  // SmolLM2 135M Q8 - better quality, still small
-  // Higher precision quantization for better output
+  // Qwen3.5 0.8B Q8_0 - higher precision, ~812 MB
+  // Better output quality with full 8-bit quantization
   LocalAiModel(
-    id: 'smollm2-135m-q8',
-    name: 'SmolLM2 Quality',
-    description: 'Better quality (140 MB), slightly slower',
-    ollamaLibrary: 'smollm2',
-    ollamaTag: '135m-instruct-q8_0',
-    ollamaBlobDigest:
-        'hf:bartowski/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q8_0.gguf',
-    sizeBytes: 140000000, // ~140 MB
-    qualityRating: 3,
+    id: 'qwen3.5-0.8b-q8',
+    name: 'Qwen3.5 Quality',
+    description: 'Higher quality (812 MB), best local output',
+    ollamaLibrary: 'qwen3.5',
+    ollamaTag: '0.8b-q8_0',
+    ollamaBlobDigest: 'hf:unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf',
+    sizeBytes: 812000000, // ~812 MB
+    qualityRating: 4,
   ),
 ];
 

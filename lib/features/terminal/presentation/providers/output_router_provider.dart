@@ -7,6 +7,7 @@ import '../../data/services/prompt_detector.dart';
 import '../../data/services/tui_mode_detector.dart';
 import '../../../session/presentation/providers/session_terminal_controller.dart';
 import 'block_provider.dart';
+import 'prompt_input_controller.dart';
 import 'terminal_config_provider.dart';
 import 'terminal_display_mode_provider.dart';
 
@@ -24,6 +25,7 @@ part 'output_router_provider.g.dart';
 class OutputRouterController extends _$OutputRouterController {
   OutputRouter? _router;
   TuiModeDetector? _tuiModeDetector;
+  void Function()? _externalCommandSubmittedCallback;
 
   @override
   OutputRouter? build(String sessionId) {
@@ -60,8 +62,18 @@ class OutputRouterController extends _$OutputRouterController {
       terminal.write(data);
     };
 
+    _router!.onPromptDetected = () {
+      ref.read(promptInputControllerProvider(sessionId).notifier).onPromptDetected();
+    };
+
+    _router!.onCommandSubmitted = () {
+      ref.read(promptInputControllerProvider(sessionId).notifier).onCommandStarted();
+      _externalCommandSubmittedCallback?.call();
+    };
+
     // Wire up TUI mode callbacks to update display mode provider and create blocks
     _router!.onTuiModeEnter = (triggeringCommand) {
+      ref.read(promptInputControllerProvider(sessionId).notifier).onTuiModeEntered();
       // Update display mode state
       ref.read(terminalDisplayModeProvider.notifier).enterTuiMode(
             triggeringCommand: triggeringCommand,
@@ -72,6 +84,7 @@ class OutputRouterController extends _$OutputRouterController {
           .createTuiSessionBlock(triggeringCommand);
     };
     _router!.onTuiModeExit = () {
+      ref.read(promptInputControllerProvider(sessionId).notifier).onTuiModeExited();
       // Complete the TUI session block
       ref
           .read(blockListControllerProvider(sessionId).notifier)
@@ -84,6 +97,7 @@ class OutputRouterController extends _$OutputRouterController {
     ref.onDispose(() {
       _router?.dispose();
       _tuiModeDetector?.dispose();
+      ref.invalidate(promptInputControllerProvider(sessionId));
     });
 
     return _router;
@@ -112,6 +126,7 @@ class OutputRouterController extends _$OutputRouterController {
     ref
         .read(blockListControllerProvider(sessionId).notifier)
         .cancelActiveTuiSession();
+    ref.read(promptInputControllerProvider(sessionId).notifier).clear();
     _router?.reset();
   }
 
@@ -130,7 +145,7 @@ class OutputRouterController extends _$OutputRouterController {
   /// This is called when the user presses Enter after typing a command.
   /// Useful for dismissing the keyboard.
   void setCommandSubmittedCallback(void Function() callback) {
-    _router?.onCommandSubmitted = callback;
+    _externalCommandSubmittedCallback = callback;
   }
 
   /// Whether the router is currently paused (e.g., during TUI mode).

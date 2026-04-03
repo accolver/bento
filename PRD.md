@@ -1813,6 +1813,9 @@ class AIModelRouter {
 ````dart
 /// Local LLM using GGML format models
 class LocalLLMProvider implements AIProvider {
+  // Initial placeholder/default path. Product note: evaluate Gemma 4 E2B
+  // as the preferred downloaded default model now that it has just been
+  // released, subject to mobile performance, size, and quality validation.
   static const _modelPath = 'assets/models/qwen-0.5b-q4.gguf';
   
   late final LlamaModel _model;
@@ -2611,7 +2614,7 @@ class CacheManager {
 | AI Ghostwriter       | P0       | Natural language to command  |
 | Error Healing        | P0       | One-tap fix suggestions      |
 | Output Summarization | P1       | AI-generated summaries       |
-| Local LLM            | P0       | On-device Qwen/Phi model     |
+| Local LLM            | P0       | On-device Qwen/Phi model; evaluate Gemma 4 E2B as the downloaded default |
 | Cloud AI Fallback    | P1       | OpenAI/Anthropic integration |
 | SFTP Browser         | P0       | Basic file transfer          |
 | Snippets             | P1       | Command templates            |
@@ -2836,7 +2839,7 @@ Follow Conventional Commits:
 | Question                                         | Status   | Decision                                                     |
 | ------------------------------------------------ | -------- | ------------------------------------------------------------ |
 | Should we support Eternal Terminal in v1?        | Deferred | Evaluate post-launch based on demand                         |
-| Local LLM model size vs quality tradeoff?        | Open     | Test Qwen-0.5B and Phi-2, choose based on device performance |
+| Local LLM model size vs quality tradeoff?        | Open     | Test Qwen-0.5B, Phi-2, and newly released Gemma 4 E2B; if Gemma 4 E2B performs well on-device, prefer it as the downloaded default model |
 | Should blocks have a maximum stored output size? | Open     | Propose 1MB limit with truncation indicator                  |
 | How to handle very long-running commands?        | Open     | Consider streaming to disk after threshold                   |
 

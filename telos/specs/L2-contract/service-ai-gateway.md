@@ -5,6 +5,7 @@ title: AI Gateway Service
 parent: L3:experience:ai-command-assistance
 children:
   - L1:function:lib/features/ai/domain/usecases:generateCommand
+  - L1:function:lib/features/ai/domain/usecases:completeCommandLine
   - L1:function:lib/features/ai/domain/usecases:healError
 -->
 
@@ -26,6 +27,13 @@ abstract class AIGateway {
   Future<Either<AIFailure, CommandSuggestion>> generateCommand({
     required String naturalLanguage,
     required ShellContext context,
+  });
+  
+  /// Refine or complete the current shell line after explicit user request
+  Future<Either<AIFailure, CommandSuggestion>> completeCommandLine({
+    required String partialLine,
+    required ShellContext context,
+    String? userIntent,
   });
   
   /// Suggest a fix for a failed command
@@ -67,7 +75,7 @@ class CommandSuggestion with _$CommandSuggestion {
     required String command,
     required String explanation,
     required double confidence,  // 0.0 - 1.0
-    required AIProvider provider,
+    required AiPrivacyMode privacyMode,
     List<String>? alternatives,
   }) = _CommandSuggestion;
 }
@@ -106,7 +114,7 @@ class ShellContext with _$ShellContext {
   }) = _ShellContext;
 }
 
-enum AIProvider { local, openai, anthropic, google }
+enum AIProvider { local, cloud, remote }
 
 @freezed
 class AIProviderStatus with _$AIProviderStatus {
@@ -138,6 +146,7 @@ class AIFailure with _$AIFailure {
 3. Route based on task complexity:
    - Simple summarization → Local
    - Command generation → Based on complexity score
+   - Explicit line completion → Same provider policy as command generation
    - Error healing → Local (privacy: errors may contain sensitive data)
    - Explanation → User preference
 
@@ -174,6 +183,7 @@ class AIFailure with _$AIFailure {
 - L3: [AI Command Assistance](../L3-experience/ai-command-assistance.md)
 - L3: [Error Recovery](../L3-experience/error-recovery.md)
 - L3: [Mobile Vibe Coding](../L3-experience/mobile-vibe-coding.md)
-- L1: [To be defined - generateCommand function]
+- L1: [generateCommand](../L1-function/ai-generate-command.md)
+- L1: [completeCommandLine](../L1-function/ai-complete-command-line.md)
 - L1: [To be defined - healError function]
 - L1: [To be defined - Local LLM wrapper]

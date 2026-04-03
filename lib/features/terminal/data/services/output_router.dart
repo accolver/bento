@@ -62,6 +62,9 @@ class OutputRouter {
   /// Callback for processed output (to write to terminal).
   void Function(String)? onProcessedOutput;
 
+  /// Callback when a shell prompt is detected and ready for input.
+  void Function()? onPromptDetected;
+
   /// Callback when a command is submitted (Enter pressed).
   /// Used to dismiss the keyboard after sending a command.
   void Function()? onCommandSubmitted;
@@ -139,6 +142,7 @@ class OutputRouter {
           _atPrompt = true;
           _inputBuffer.clear(); // Clear any stale input
           _lastCommand = null;
+          onPromptDetected?.call();
         }
       } else if (_blockController.hasActiveBlock) {
         // Not a prompt line - add to buffer for current block

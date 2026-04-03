@@ -1,44 +1,36 @@
 // @telos L2:contract:component-command-ribbon
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/command_ribbon_provider.dart';
+import '../../domain/entities/command_suggestion_chip.dart';
+import '../../domain/entities/prompt_input_state.dart';
 
 /// A horizontal scrollable strip showing command suggestions.
-///
-/// Positioned above the keyboard, the ribbon provides:
-/// - **Idle mode** — recent history or common-command defaults.
-/// - **Completing mode** — context-aware subcommand / history completions.
-/// - **Symbol mode** — quick-access shell symbols (pipe, redirect, etc.).
-///
-/// The `#` toggle on the leading edge switches between symbol mode and the
-/// previous suggestion context.
-class CommandRibbon extends ConsumerWidget {
+class CommandRibbon extends StatelessWidget {
   const CommandRibbon({
     required this.sessionId,
+    required this.inputState,
+    required this.suggestions,
     required this.onSuggestionTap,
-    this.onSymbolToggle,
+    required this.onSymbolToggle,
+    this.onAiRequested,
     super.key,
   });
 
-  /// Session ID used to key the [CommandRibbonController].
   final String sessionId;
-
-  /// Called when a suggestion chip is tapped.
-  ///
-  /// The [text] parameter is the value to insert into the input field
-  /// (which may include a trailing space for commands that expect arguments).
-  final void Function(String text) onSuggestionTap;
-
-  /// Optional callback fired when the symbol toggle is pressed.
-  final VoidCallback? onSymbolToggle;
+  final PromptInputState inputState;
+  final List<CommandSuggestionChip> suggestions;
+  final void Function(CommandSuggestionChip suggestion) onSuggestionTap;
+  final VoidCallback onSymbolToggle;
+  final VoidCallback? onAiRequested;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ribbonState = ref.watch(commandRibbonControllerProvider(sessionId));
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isSymbolMode = ribbonState.mode == RibbonMode.symbols;
+
+    if (!inputState.canShowRibbon || inputState.isInTuiMode) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       height: 40,
@@ -53,44 +45,39 @@ class CommandRibbon extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // Symbol toggle button
-          _SymbolToggleButton(
-            isActive: isSymbolMode,
-            onTap: () {
-              final controller = ref.read(
-                commandRibbonControllerProvider(sessionId).notifier,
-              );
-              if (isSymbolMode) {
-                controller.hideSymbols();
-              } else {
-                controller.showSymbols();
-              }
-              onSymbolToggle?.call();
-            },
+          _ActionButton(
+            label: '#',
+            tooltip: 'Symbols',
+            onTap: onSymbolToggle,
           ),
-
-          // Vertical divider
+          _ActionButton(
+            icon: Icons.auto_awesome,
+            tooltip: 'Ask AI',
+            onTap: onAiRequested,
+          ),
           Container(
             width: 1,
             height: 24,
             color: theme.colorScheme.outlineVariant,
           ),
-
-          // Horizontally-scrollable suggestion chips
           Expanded(
-            child: ribbonState.suggestions.isEmpty
+            child: suggestions.isEmpty
                 ? const SizedBox.shrink()
                 : ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    itemCount: ribbonState.suggestions.length,
+                    itemCount: suggestions.length,
                     itemBuilder: (context, index) {
-                      final suggestion = ribbonState.suggestions[index];
+                      final suggestion = suggestions[index];
                       return _SuggestionChip(
                         suggestion: suggestion,
-                        onTap: () => onSuggestionTap(
-                          suggestion.insertText ?? suggestion.text,
-                        ),
+                        onTap: () {
+                          if (suggestion.kind == CommandSuggestionKind.ai) {
+                            onAiRequested?.call();
+                          } else {
+                            onSuggestionTap(suggestion);
+                          }
+                        },
                       );
                     },
                   ),
@@ -101,41 +88,42 @@ class CommandRibbon extends ConsumerWidget {
   }
 }
 
-// -----------------------------------------------------------------------------
-// Private widgets
-// -----------------------------------------------------------------------------
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    this.label,
+    this.icon,
+    required this.tooltip,
+    this.onTap,
+  }) : assert(label != null || icon != null);
 
-/// The `#` button on the leading edge that toggles symbol mode.
-class _SymbolToggleButton extends StatelessWidget {
-  const _SymbolToggleButton({
-    required this.isActive,
-    required this.onTap,
-  });
-
-  final bool isActive;
-  final VoidCallback onTap;
+  final String? label;
+  final IconData? icon;
+  final String tooltip;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    return Material(
-      color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: Text(
-              '#',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isActive
-                    ? theme.colorScheme.onPrimaryContainer
-                    : theme.colorScheme.onSurfaceVariant,
-              ),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Center(
+              child: icon != null
+                  ? Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant)
+                  : Text(
+                      label!,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
             ),
           ),
         ),
@@ -144,24 +132,27 @@ class _SymbolToggleButton extends StatelessWidget {
   }
 }
 
-/// An individual suggestion chip inside the ribbon.
 class _SuggestionChip extends StatelessWidget {
   const _SuggestionChip({
     required this.suggestion,
     required this.onTap,
   });
 
-  final RibbonSuggestion suggestion;
+  final CommandSuggestionChip suggestion;
   final VoidCallback onTap;
 
-  /// Leading icon for history suggestions; other types have no icon.
   IconData? get _icon {
-    switch (suggestion.type) {
-      case RibbonSuggestionType.history:
+    switch (suggestion.kind) {
+      case CommandSuggestionKind.history:
         return Icons.history;
-      case RibbonSuggestionType.subcommand:
-      case RibbonSuggestionType.symbol:
-      case RibbonSuggestionType.common:
+      case CommandSuggestionKind.ai:
+        return Icons.auto_awesome;
+      case CommandSuggestionKind.command:
+      case CommandSuggestionKind.subcommand:
+      case CommandSuggestionKind.argument:
+      case CommandSuggestionKind.file:
+      case CommandSuggestionKind.snippet:
+      case CommandSuggestionKind.symbol:
         return null;
     }
   }
@@ -169,14 +160,17 @@ class _SuggestionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isSymbol = suggestion.type == RibbonSuggestionType.symbol;
+    final isSymbol = suggestion.kind == CommandSuggestionKind.symbol;
+    final isAi = suggestion.kind == CommandSuggestionKind.ai;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
       child: Material(
-        color: isSymbol
-            ? theme.colorScheme.secondaryContainer
-            : theme.colorScheme.surfaceContainerHigh,
+        color: isAi
+            ? theme.colorScheme.primaryContainer
+            : isSymbol
+                ? theme.colorScheme.secondaryContainer
+                : theme.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
@@ -184,7 +178,7 @@ class _SuggestionChip extends StatelessWidget {
           child: Container(
             constraints: BoxConstraints(
               minWidth: isSymbol ? 36 : 48,
-              maxWidth: 200,
+              maxWidth: 220,
             ),
             padding: EdgeInsets.symmetric(
               horizontal: isSymbol ? 8 : 10,
@@ -199,12 +193,16 @@ class _SuggestionChip extends StatelessWidget {
                 ],
                 Flexible(
                   child: Text(
-                    suggestion.text,
+                    suggestion.label,
                     style: TextStyle(
                       fontSize: isSymbol ? 16 : 13,
                       fontFamily: isSymbol ? 'JetBrainsMono' : null,
-                      fontWeight: isSymbol ? FontWeight.bold : FontWeight.w500,
-                      color: theme.colorScheme.onSurface,
+                      fontWeight: isSymbol || isAi
+                          ? FontWeight.bold
+                          : FontWeight.w500,
+                      color: isAi
+                          ? theme.colorScheme.onPrimaryContainer
+                          : theme.colorScheme.onSurface,
                     ),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,

@@ -10,15 +10,22 @@ import '../../../../app/router.dart';
 import '../../../../core/constants/terminal_colors.dart';
 import '../../../ai/domain/entities/ai_config.dart';
 import '../../../ai/presentation/providers/ai_providers.dart';
+import '../../../ai/presentation/providers/complete_command_line_provider.dart';
 import '../../../ai/presentation/screens/ai_setup_wizard.dart';
 import '../../../ai/presentation/widgets/ai_fab.dart';
 import '../../../ai/presentation/widgets/ai_ghostwriter_panel.dart';
+import '../../../ai/presentation/widgets/ai_line_completion_sheet.dart';
+import '../../domain/entities/command_suggestion_chip.dart';
 import '../../domain/entities/terminal_config.dart';
 import '../../domain/entities/terminal_mode.dart';
 import '../../domain/entities/view_mode.dart';
+import '../../domain/services/apply_command_suggestion.dart';
 import '../../../session/presentation/providers/session_terminal_controller.dart';
 import '../providers/block_provider.dart';
+import '../providers/command_ribbon_ui_provider.dart';
 import '../providers/output_router_provider.dart';
+import '../providers/prompt_input_controller.dart';
+import '../providers/shell_context_provider.dart';
 import '../providers/terminal_config_provider.dart';
 import '../providers/terminal_display_mode_provider.dart';
 import '../providers/view_mode_provider.dart';
@@ -144,10 +151,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
                 // Command ribbon - visible when blocks are shown (not TUI/fullTerminal)
                 if (_shouldShowCommandRibbon(displayMode, viewMode))
-                  CommandRibbon(
-                    sessionId: widget.sessionId,
-                    onSuggestionTap: _handleRibbonSuggestion,
-                  ),
+                  _buildCommandRibbon(),
 
                 // Modifier keys bar - always visible
                 ModifierKeysBar(onKey: _handleKey),
@@ -190,10 +194,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
                   // Command ribbon - visible when blocks are shown (not TUI/fullTerminal)
                   if (_shouldShowCommandRibbon(displayMode, viewMode))
-                    CommandRibbon(
-                      sessionId: widget.sessionId,
-                      onSuggestionTap: _handleRibbonSuggestion,
-                    ),
+                    _buildCommandRibbon(),
 
                   // Modifier keys bar - always visible
                   ModifierKeysBar(onKey: _handleKey),
@@ -226,32 +227,135 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     return true;
   }
 
-  /// Handles a suggestion tap from the command ribbon.
-  ///
-  /// Inserts the suggestion text into the terminal input and optionally
-  /// routes through the output router for block tracking.
-  void _handleRibbonSuggestion(String text) {
+  Widget _buildCommandRibbon() {
     final sessionId = widget.sessionId;
-    final controller =
-        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
-    final config = ref.read(terminalConfigProvider);
+    final inputState = ref.watch(promptInputControllerProvider(sessionId));
+    final suggestions = ref.watch(commandRibbonSuggestionsProvider(sessionId));
 
-    // If semantic blocks enabled, route through output router for input tracking
-    if (config.enableSemanticBlocks) {
-      for (final char in text.split('')) {
-        ref
-            .read(outputRouterControllerProvider(sessionId).notifier)
-            .processInput(char);
-      }
+    return CommandRibbon(
+      sessionId: sessionId,
+      inputState: inputState,
+      suggestions: suggestions,
+      onSuggestionTap: _handleRibbonSuggestion,
+      onSymbolToggle: () {
+        final current = ref.read(commandRibbonUiModeProvider(sessionId));
+        ref.read(commandRibbonUiModeProvider(sessionId).notifier).state =
+            current == CommandRibbonUiMode.symbols
+                ? CommandRibbonUiMode.ranked
+                : CommandRibbonUiMode.symbols;
+      },
+      onAiRequested: () => _handleRibbonAiRequest(context),
+    );
+  }
+
+  /// Handles a structured suggestion tap from the command ribbon.
+  void _handleRibbonSuggestion(CommandSuggestionChip suggestion) {
+    final sessionId = widget.sessionId;
+    final promptState = ref.read(promptInputControllerProvider(sessionId));
+    if (!promptState.isAtPrompt || promptState.isInTuiMode) {
+      return;
     }
 
-    // Write to terminal
-    controller.write(text);
+    final nextState = applyCommandSuggestion(
+      current: promptState,
+      suggestion: suggestion,
+    );
+
+    _replaceCurrentPromptLine(nextState.text);
   }
 
   /// Delegates to the top-level [shouldShowAiFab] for testability.
   bool _shouldShowAiFab(TerminalMode displayMode, ViewMode viewMode) =>
       shouldShowAiFab(displayMode, viewMode);
+
+  Future<void> _handleRibbonAiRequest(BuildContext context) async {
+    final promptState = ref.read(promptInputControllerProvider(widget.sessionId));
+    if (!promptState.isAtPrompt || promptState.isInTuiMode) {
+      return;
+    }
+
+    if (promptState.text.trim().isEmpty) {
+      await _showAiPanel(context);
+      return;
+    }
+
+    final configured = await _ensureAiConfigured(context);
+    if (!configured || !mounted) {
+      return;
+    }
+
+    _showLineCompletionSheet(context, promptState.text);
+  }
+
+  Future<bool> _ensureAiConfigured(BuildContext context) async {
+    final configAsync = ref.read(aiConfigStateProvider);
+
+    final AiConfig config;
+    if (configAsync.isLoading || configAsync.hasError) {
+      config = await ref.read(aiConfigStateProvider.future);
+    } else {
+      config = configAsync.valueOrNull ?? AiConfig.unconfigured();
+    }
+
+    if (config.isConfigured) {
+      return true;
+    }
+
+    await AiSetupWizard.show(context);
+    final newConfig = await ref.read(aiConfigStateProvider.future);
+    return newConfig.isConfigured;
+  }
+
+  Future<void> _showLineCompletionSheet(
+    BuildContext context,
+    String currentLine,
+  ) async {
+    final sessionId = widget.sessionId;
+    final shellContext = ref.read(shellContextProvider(sessionId));
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => AiLineCompletionSheet(
+        originalLine: currentLine,
+        onGenerate: () async {
+          final usecase = await ref.read(completeCommandLineUseCaseProvider.future);
+          return usecase.call(
+            partialLine: currentLine,
+            context: shellContext,
+          );
+        },
+        onApply: (command) {
+          Navigator.of(sheetContext).pop();
+          _replaceCurrentPromptLine(command);
+        },
+        onRun: (command) {
+          Navigator.of(sheetContext).pop();
+          _replaceCurrentPromptLine(command);
+          _submitCommand(command, lineAlreadyPresent: true);
+        },
+        onDismiss: () => Navigator.of(sheetContext).pop(),
+      ),
+    );
+  }
+
+  void _replaceCurrentPromptLine(String text) {
+    final sessionId = widget.sessionId;
+    ref.read(promptInputControllerProvider(sessionId).notifier).overwriteText(text);
+
+    final outputRouter = ref.read(outputRouterControllerProvider(sessionId).notifier);
+    final controller =
+        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
+
+    outputRouter.processInput('\x15');
+    controller.write('\x15');
+
+    if (text.isNotEmpty) {
+      outputRouter.processInput(text);
+      controller.write(text);
+    }
+  }
 
   /// Shows the AI Ghostwriter bottom sheet panel.
   ///
@@ -310,26 +414,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
 
   /// Executes a command generated by AI.
   void _executeAiCommand(String command) {
-    final sessionId = widget.sessionId;
-    final controller =
-        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
-    final config = ref.read(terminalConfigProvider);
-
-    // If semantic blocks enabled, route through output router to create a block
-    if (config.enableSemanticBlocks) {
-      final outputRouter =
-          ref.read(outputRouterControllerProvider(sessionId).notifier);
-      // Send each character to build up the input buffer
-      for (final char in command.split('')) {
-        outputRouter.processInput(char);
-      }
-      // Send Enter to trigger block creation
-      outputRouter.processInput('\n');
-    }
-
-    // Write the command to the terminal (use \r for CR, not \n — terminals
-    // expect carriage return to submit, not line feed)
-    controller.write('$command\r');
+    _submitCommand(command);
 
     // Request focus back on the terminal view after a short delay
     // to allow the bottom sheet dismissal animation to complete
@@ -632,10 +717,26 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   }
 
   void _handleRerunCommand(String command) {
-    // Re-execute the command via per-session controller (use \r for CR)
+    _submitCommand(command);
+  }
+
+  void _submitCommand(String command, {bool lineAlreadyPresent = false}) {
+    final sessionId = widget.sessionId;
     final controller =
-        ref.read(sessionTerminalControllerProvider(widget.sessionId).notifier);
-    controller.write('$command\r');
+        ref.read(sessionTerminalControllerProvider(sessionId).notifier);
+    final config = ref.read(terminalConfigProvider);
+
+    if (config.enableSemanticBlocks) {
+      final outputRouter =
+          ref.read(outputRouterControllerProvider(sessionId).notifier);
+      if (!lineAlreadyPresent) {
+        outputRouter.processInput(command);
+      }
+      outputRouter.processInput('\r');
+    }
+
+    ref.read(promptInputControllerProvider(sessionId).notifier).onCommandStarted();
+    controller.write(lineAlreadyPresent ? '\r' : '$command\r');
   }
 
   void _handleResize(TerminalDimensions dimensions) {

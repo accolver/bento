@@ -17,6 +17,7 @@ import '../../../terminal/data/datasources/ssh_datasource.dart';
 import '../../../terminal/domain/entities/ssh_connection_config.dart';
 import '../../../terminal/domain/entities/terminal_config.dart';
 import '../../../terminal/presentation/providers/output_router_provider.dart';
+import '../../../terminal/presentation/providers/prompt_input_controller.dart';
 import '../../../terminal/presentation/providers/terminal_config_provider.dart';
 import 'session_list_controller.dart';
 import '../../domain/entities/session_status.dart';
@@ -61,6 +62,8 @@ class SessionTerminalController extends _$SessionTerminalController {
       // Only transform a bare \n — don't touch \r\n which is already correct.
       final transformed = data == '\n' ? '\r' : data;
 
+      _syncPromptInput(transformed);
+
       // Route through OutputRouter for command/input tracking when semantic
       // blocks are enabled. This allows the router to detect Enter presses
       // and buffer typed characters for block creation.
@@ -73,6 +76,37 @@ class SessionTerminalController extends _$SessionTerminalController {
 
       _sshDataSource!.writeString(transformed);
     }
+  }
+
+  void _syncPromptInput(String data) {
+    final promptState = ref.read(promptInputControllerProvider(sessionId));
+    if (!promptState.isAtPrompt || promptState.isInTuiMode) {
+      return;
+    }
+
+    final promptController =
+        ref.read(promptInputControllerProvider(sessionId).notifier);
+
+    if (data == '\r' || data == '\n' || data == '\r\n') {
+      return;
+    }
+
+    if (data == '\x7f' || data == '\x08') {
+      promptController.deleteBackward();
+      return;
+    }
+
+    if (data == '\x15') {
+      promptController.clear();
+      return;
+    }
+
+    if (data.startsWith('\x1b') ||
+        data.codeUnits.any((c) => c < 32 && c != 9)) {
+      return;
+    }
+
+    promptController.insertText(data);
   }
 
   /// Connects to a remote host via SSH.

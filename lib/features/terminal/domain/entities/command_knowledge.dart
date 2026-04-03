@@ -3,10 +3,23 @@
 /// Built-in knowledge of common command structures for ribbon suggestions.
 ///
 /// Provides a static, in-memory knowledge base of popular CLI tools and their
-/// subcommands. Used by the [CommandRibbonController] to offer context-aware
-/// completions as the user types.
+/// subcommands. Used by the command-assistance ranking layer to offer
+/// context-aware completions as the user types.
 class CommandKnowledge {
-  CommandKnowledge._(); // Prevent instantiation
+  const CommandKnowledge();
+
+  /// Known top-level command names.
+  Iterable<String> get commands => subcommands.keys;
+
+  /// Instance helper for retrieving subcommands.
+  List<String>? subcommandsFor(String command) {
+    return subcommands[command];
+  }
+
+  /// Instance helper for retrieving nested subcommands.
+  List<String>? nestedSubcommandsFor(String command, String subcommand) {
+    return nestedSubcommands[command]?[subcommand];
+  }
 
   /// Top-level subcommands for well-known CLI tools.
   static const Map<String, List<String>> subcommands = {

@@ -13,87 +13,135 @@ children:
 
 ## Overview
 
-A user who doesn't remember exact CLI syntax describes what they want in natural
-language, and the AI Ghostwriter generates the correct command with explanation.
+A mobile developer gets command help in two distinct ways: **fast predictive
+completion while typing** and **explicit AI command generation when intent is
+hard to express as shell syntax**. Bento must keep these flows separate so the
+user gets instant, trustworthy suggestions without the ribbon feeling slow,
+noisy, or invasive.
 
 ## User Story
 
-As a **developer unfamiliar with complex CLI syntax**, I want to **describe my
-intent in plain English and get the correct command** so that **I can execute
-tasks without memorizing arcane flags and options**.
+As a **developer working in a terminal on a phone**, I want to **get immediate
+command help without losing control of the shell** so that **I can type less,
+avoid syntax mistakes, and still use AI when I need higher-level help**.
 
 ## Journey Steps
 
-1. **Invoke AI Ghostwriter**
-   - User action: Taps the AI button (🤖) in the command ribbon
-   - System response: Opens Ghostwriter modal with text input field
-   - Success criteria: Modal appears with focus on input, keyboard ready
+1. **Start Typing at a Shell Prompt**
+   - User action: Begins typing into a normal shell prompt
+   - System response: Shows a command ribbon with low-latency suggestions from
+     history, command knowledge, snippets, and symbols
+   - Success criteria: Suggestions appear within 100ms and do not block typing
 
-2. **Describe Intent**
-   - User action: Types "find all log files larger than 100MB modified today"
-   - System response: Shows typing indicator while AI processes
-   - Success criteria: Input accepted, processing begins within 200ms
+2. **Use Fast Deterministic Completion**
+   - User action: Types a partial token like `kub` or `docker co`
+   - System response: Shows token-aware completions such as `kubectl` or
+     `compose`
+   - Success criteria: Tapping a suggestion replaces only the active token,
+     preserves the rest of the line, and appends a trailing space when helpful
 
-3. **Review Suggestion**
-   - User action: Views the suggested command
-   - System response: Displays
-     `find /var/log -name "*.log" -size +100M -mtime 0` with explanation
-   - Success criteria: Command shown with confidence indicator and brief
-     explanation
+3. **Escalate to AI When Needed**
+   - User action: Taps the AI affordance because the desired command is too
+     complex to complete from syntax alone
+   - System response: Opens explicit AI assistance for either full-command
+     generation or line completion
+   - Success criteria: AI is opt-in and never silently rewrites the line
 
-4. **Refine if Needed**
-   - User action: Taps "Edit" to modify, or "Regenerate" for alternative
-   - System response: Allows inline editing or generates new suggestion
-   - Success criteria: User can tweak command or get alternatives
+4. **Review the AI Suggestion**
+   - User action: Reads the suggested command and explanation
+   - System response: Shows confidence, explanation, and safe actions to
+     insert, replace, edit, copy, or execute
+   - Success criteria: User can understand the command before it runs
 
-5. **Execute Command**
-   - User action: Taps "Execute" button
-   - System response: Inserts command into terminal, creates new block, runs it
-   - Success criteria: Block shows command executing with output
+5. **Apply the Suggestion Safely**
+   - User action: Accepts a ribbon or AI suggestion
+   - System response: Applies it only to the intended token or line region
+   - Success criteria: No duplicated text, no corrupted shell state, no hidden
+     mutations
 
-6. **Learn from Result**
-   - User action: Reviews output in the block
-   - System response: Command saved to history, AI learns from acceptance
-   - Success criteria: Future similar requests improve in accuracy
+6. **Return to Normal Typing**
+   - User action: Continues editing or submits the command
+   - System response: Ribbon updates based on the new prompt input state or
+     hides when command execution/TUI mode begins
+   - Success criteria: Assistance never appears during full-screen TUI apps or
+     while command output is streaming
+
+## Interaction Model
+
+### 1. Predictive Ribbon
+
+Used for:
+- command name completion
+- subcommand completion
+- argument/resource hints
+- history-based repetition
+- symbol insertion
+- snippet insertion
+
+Properties:
+- deterministic
+- local/instant
+- safe to use per keystroke
+- no network/model call required
+
+### 2. AI Assistance
+
+Used for:
+- natural-language-to-command generation
+- complex flag composition
+- turning partial intent into a full line
+- offering alternatives when requests are ambiguous
+
+Properties:
+- explicit, never implicit
+- may be local, remote, or cloud depending on privacy mode
+- provides explanation and confidence
+- should not fire on every keystroke
 
 ## Edge Cases
 
-- **Ambiguous request**: AI asks clarifying question before generating
-- **Dangerous command**: Shows warning for destructive operations (rm -rf, DROP
-  TABLE)
-- **No network (cloud AI)**: Falls back to local LLM with potentially reduced
-  accuracy
-- **AI unavailable**: Shows error, offers to search command history instead
-- **Multiple interpretations**: Shows top 3 alternatives with explanations
+- **TUI active**: No ribbon suggestions while vim, htop, Claude Code, etc. own
+  the screen
+- **Command running**: Ribbon hides or freezes while the shell is not at a
+  prompt
+- **Unknown shell state**: Bento must avoid destructive inline edits if prompt
+  state is uncertain
+- **Ambiguous AI request**: Show alternatives or ask for clarification
+- **Dangerous command**: Warn before execution for destructive operations
+- **Cloud AI disabled**: Ribbon still works fully; AI uses allowed provider only
 
 ## Privacy Considerations
 
-- **Local-first**: Simple commands processed by on-device LLM
-- **Cloud consent**: Complex commands may use cloud AI with explicit user
-  consent
-- **No sensitive data**: Commands containing passwords/keys processed locally
-  only
-- **Opt-out available**: User can disable cloud AI entirely in settings
+- Predictive ribbon should work without sending prompt text anywhere
+- AI escalation must respect privacy mode before any external transmission
+- Error output and sensitive command content remain local/private unless the
+  user has explicitly chosen a non-private mode
+- AI should receive the minimum context needed: shell, OS, cwd, recent commands,
+  and optionally available tools
 
 ## Analytics Events
 
-- `ghostwriter_opened`: When AI modal is invoked
-- `ghostwriter_query_submitted`: Natural language query sent to AI
-- `ghostwriter_suggestion_accepted`: User executes suggested command
-- `ghostwriter_suggestion_rejected`: User dismisses or regenerates
-- `ghostwriter_suggestion_edited`: User modifies before executing
-- `ghostwriter_provider_used`: Track local vs cloud AI usage
+- `command_ribbon_shown`
+- `command_ribbon_suggestion_tapped`
+- `command_ribbon_ai_escalation_tapped`
+- `command_ribbon_symbol_tapped`
+- `ghostwriter_opened`
+- `ghostwriter_query_submitted`
+- `ghostwriter_suggestion_accepted`
+- `ghostwriter_suggestion_edited`
+- `ghostwriter_provider_used`
 
 ## Success Metrics
 
-- AI suggestion acceptance rate: > 60%
-- Time from query to suggestion: < 2 seconds (local), < 5 seconds (cloud)
-- User edits required: < 20% of accepted suggestions
-- Repeat queries (same intent): < 10% (indicates learning)
+- Ribbon suggestion latency: < 100ms
+- AI suggestion latency: < 2s local/private, < 5s cloud
+- Keystroke reduction: > 50% for repeated command workflows
+- Ribbon acceptance rate: > 35% for eligible prompt sessions
+- AI acceptance rate: > 60% for explicit AI requests
+- Command corruption incidents: 0 tolerated
 
 ## Related Specs
 
-- L2: [To be defined - AI Gateway contract]
-- L2: [To be defined - Ghostwriter UI contract]
-- L1: [To be defined - generateCommand function]
-- L1: [To be defined - Local LLM inference]
+- L2: [AI Gateway Service](../L2-contract/service-ai-gateway.md)
+- L2: [Command Ribbon Component](../L2-contract/component-command-ribbon.md)
+- L2: [Ghostwriter Modal Component](../L2-contract/component-ghostwriter-modal.md)

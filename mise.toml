@@ -16,13 +16,57 @@ BENTO_DEVICE_WIRED = "4C091FDAP0032A"
 
 # Helper script to get available device (wireless preferred, wired fallback)
 [tasks."_device"]
-description = "Get available device ID (internal helper)"
+description = "Get or boot an available mobile device ID (internal helper)"
 run = '''
+set -e
+
+# 1) Prefer explicitly configured physical devices.
 if flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS"; then
   echo "$BENTO_DEVICE_WIRELESS"
-else
-  echo "$BENTO_DEVICE_WIRED"
+  exit 0
 fi
+
+if flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRED"; then
+  echo "$BENTO_DEVICE_WIRED"
+  exit 0
+fi
+
+# 2) Reuse any already-running Android emulator.
+RUNNING_ANDROID=$(flutter devices 2>/dev/null | awk -F ' • ' '/emulator-[0-9]+ • android-/{print $2; exit}')
+if [ -n "$RUNNING_ANDROID" ]; then
+  echo "$RUNNING_ANDROID"
+  exit 0
+fi
+
+# 3) Reuse any already-running iOS simulator.
+RUNNING_IOS=$(flutter devices 2>/dev/null | awk -F ' • ' '/ • ios •/{print $2; exit}')
+if [ -n "$RUNNING_IOS" ]; then
+  echo "$RUNNING_IOS"
+  exit 0
+fi
+
+# 4) Boot the first available emulator and wait for it to appear.
+EMULATOR_ID=$(flutter emulators 2>/dev/null | awk '/^[A-Za-z0-9_.-]+[[:space:]]+•/ && $1 != "Id" {print $1; exit}')
+if [ -n "$EMULATOR_ID" ]; then
+  echo "Launching emulator: $EMULATOR_ID" >&2
+  flutter emulators --launch "$EMULATOR_ID" >/dev/null
+
+  for _ in $(seq 1 24); do
+    sleep 5
+    RUNNING_ANDROID=$(flutter devices 2>/dev/null | awk -F ' • ' '/emulator-[0-9]+ • android-/{print $2; exit}')
+    if [ -n "$RUNNING_ANDROID" ]; then
+      echo "$RUNNING_ANDROID"
+      exit 0
+    fi
+  done
+
+  echo "Timed out waiting for emulator '$EMULATOR_ID' to boot." >&2
+  exit 1
+fi
+
+echo "No supported mobile devices or emulators found." >&2
+echo "Tip: run 'flutter emulators' to create/start one, or connect a device." >&2
+exit 1
 '''
 
 # =============================================================================
@@ -49,37 +93,37 @@ run = "flutter build appbundle --release"
 
 [tasks.install]
 alias = "i"
-description = "Install debug APK to connected device"
+description = "Install debug APK to connected device or emulator"
 depends = ["build"]
 run = '''
-DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+DEVICE=$(mise run _device)
 echo "Using device: $DEVICE"
 flutter install --debug -d "$DEVICE"
 '''
 
 [tasks."install:release"]
 alias = "ir"
-description = "Install release APK to connected device"
+description = "Install release APK to connected device or emulator"
 depends = ["build:release"]
 run = '''
-DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+DEVICE=$(mise run _device)
 echo "Using device: $DEVICE"
 flutter install --release -d "$DEVICE"
 '''
 
 [tasks.run]
 alias = "r"
-description = "Run app on connected device with hot reload"
+description = "Run app on connected device or emulator with hot reload"
 run = '''
-DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+DEVICE=$(mise run _device)
 echo "Using device: $DEVICE"
 flutter run -d "$DEVICE"
 '''
 
 [tasks."run:release"]
-description = "Run release build on device"
+description = "Run release build on device or emulator"
 run = '''
-DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+DEVICE=$(mise run _device)
 echo "Using device: $DEVICE"
 flutter run --release -d "$DEVICE"
 '''
@@ -88,7 +132,7 @@ flutter run --release -d "$DEVICE"
 alias = "h"
 description = "Run with hot reload (same as run)"
 run = '''
-DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+DEVICE=$(mise run _device)
 echo "Using device: $DEVICE"
 flutter run -d "$DEVICE"
 '''
@@ -172,6 +216,45 @@ flutter pub run build_runner build --delete-conflicting-outputs
 # =============================================================================
 # Device Management Tasks
 # =============================================================================
+
+[tasks.emulator]
+description = "Launch the first available Flutter emulator"
+run = '''
+EMULATOR_ID=$(flutter emulators 2>/dev/null | awk '/^[A-Za-z0-9_.-]+[[:space:]]+•/ && $1 != "Id" {print $1; exit}')
+if [ -z "$EMULATOR_ID" ]; then
+  echo "No emulator available. Run 'flutter emulators' to inspect or create one." >&2
+  exit 1
+fi
+
+echo "Launching emulator: $EMULATOR_ID"
+flutter emulators --launch "$EMULATOR_ID"
+'''
+
+[tasks."emulator:list"]
+description = "List available Flutter emulators"
+run = "flutter emulators"
+
+[tasks.android]
+description = "Run app on Android device or emulator with hot reload"
+run = '''
+DEVICE=$(mise run _device)
+echo "Using Android device: $DEVICE"
+flutter run -d "$DEVICE"
+'''
+
+[tasks.ios]
+description = "Run app on iOS simulator or device with hot reload"
+run = '''
+DEVICE=$(flutter devices 2>/dev/null | awk -F ' • ' '/ • ios •/{print $2; exit}')
+if [ -z "$DEVICE" ]; then
+  echo "No iOS simulator/device detected." >&2
+  echo "Open Simulator.app first, then re-run this task." >&2
+  exit 1
+fi
+
+echo "Using iOS device: $DEVICE"
+flutter run -d "$DEVICE"
+'''
 
 [tasks.devices]
 alias = "d"
@@ -271,11 +354,11 @@ run = "git add -A && git commit -m \"$usage_message\""
 # =============================================================================
 
 [tasks.dev]
-description = "Full dev setup: deps, generate, run"
+description = "Full dev setup: deps, generate, run on device or emulator"
 run = '''
 flutter pub get
 flutter pub run build_runner build --delete-conflicting-outputs
-DEVICE=$(flutter devices 2>/dev/null | grep -q "$BENTO_DEVICE_WIRELESS" && echo "$BENTO_DEVICE_WIRELESS" || echo "$BENTO_DEVICE_WIRED")
+DEVICE=$(mise run _device)
 echo "Using device: $DEVICE"
 flutter run -d "$DEVICE"
 '''

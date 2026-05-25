@@ -43,7 +43,7 @@ dependencies:
 
   # UI
   flutter_animate: ^4.3.0
-  google_fonts: ^6.1.0
+  google_fonts: ^8.1.0
 
   # Utils
   uuid: ^4.2.0
